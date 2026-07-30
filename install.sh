@@ -168,8 +168,8 @@ provision_openrouter_models() {
   # Spark/vLLM model already wired up per SPARK.md's routing guidance
   # (agents.defaults.subagents.model is exactly what that doc tells readers
   # to set). Only wire the free model in if the path is currently unset.
-  set_model_if_unset "agents.defaults.utilityModel" "$model_1" "agents.defaults.utilityModel"
-  set_model_if_unset "agents.defaults.subagents.model" "$model_1" "agents.defaults.subagents.model"
+  set_model_if_unset "agents.defaults.utilityModel" "$model_1" "agents.defaults.utilityModel" || true
+  set_model_if_unset "agents.defaults.subagents.model" "$model_1" "agents.defaults.subagents.model" || true
 
   # Only point the primary model at OpenRouter's own dynamic per-prompt
   # router if nothing else is already explicitly configured there — never
