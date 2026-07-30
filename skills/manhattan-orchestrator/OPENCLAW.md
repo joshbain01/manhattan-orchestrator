@@ -98,7 +98,8 @@ prompt: f"""{persona}...."""   →   task: f"""{persona}...."""
    # {name} below is a placeholder — substitute the actual persona short
    # name, e.g. "software-architect" (see the worked example below).
    persona_path = os.path.expanduser("~/.copilot/agents/engineering-{name}.md")
-   persona = open(persona_path).read()
+   with open(persona_path, encoding="utf-8") as f:
+     persona = f.read()
 
    task = f"""
    {persona}
