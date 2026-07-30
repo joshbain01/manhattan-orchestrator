@@ -165,7 +165,7 @@ Before final delivery, the orchestrator must explicitly answer:
 
 ## 6. Engineering Division Sub-Agents
 
-The Engineering Division is a roster of 58 pre-built specialist personas available as sub-agents. When a task requires deep domain expertise, **spawn an Engineering Sub-Agent instead of a generic `general-purpose` agent**.
+The Engineering Division is a roster of 55 pre-built specialist personas available as sub-agents. When a task requires deep domain expertise, **spawn an Engineering Sub-Agent instead of a generic `general-purpose` agent**.
 
 ### 6.1 Three-Tier Delegation Model
 
