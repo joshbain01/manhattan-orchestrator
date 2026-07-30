@@ -6,6 +6,10 @@ tool — into [OpenClaw](https://docs.openclaw.ai)'s native sub-agent primitive,
 `sessions_spawn`. Read `SKILL.md` first; this file only covers what's
 different when the orchestrator is running under OpenClaw.
 
+For routing sub-agent work to a local LAN inference box (e.g. an NVIDIA
+Spark) instead of a cloud model, see the separate, unvalidated
+[`SPARK.md`](./SPARK.md) recipe.
+
 ---
 
 ## 1. Skill discovery already works — no action needed
@@ -193,3 +197,69 @@ just pins it explicitly rather than changing behavior.
 gateway process does not pick it up until it's restarted. The three-tier
 nesting above will not actually work until you restart the OpenClaw gateway
 after running `install.sh --openclaw`.
+
+---
+
+## 4. OpenRouter dynamic model provisioning
+
+`install.sh --openclaw` also provisions [OpenRouter](https://openrouter.ai)
+as a cost-capped, dynamically-routed model source for the tiers above —
+gated entirely on `OPENROUTER_API_KEY` being present in the environment when
+the script runs. If it isn't set, this step is skipped (exit 0, warning
+printed) and the rest of `--openclaw` still runs normally.
+
+When the key is set, `provision_openrouter_models` (a helper inside
+`install.sh`'s `install_openclaw_integration`) does the following, entirely
+through OpenClaw's own CLI surface:
+
+1. **Registers the key non-interactively:**
+   `printf '%s' "$OPENROUTER_API_KEY" | openclaw models auth paste-api-key --provider openrouter`.
+   `paste-api-key` reads the key from stdin with no TTY required, and writes
+   it to the local auth-profiles store under a dedicated `openrouter:manual`
+   profile — it does not disturb any other provider's auth profile, and
+   rerunning it with the same key is a no-op. The raw key is never written
+   into any file this script or the repo tracks.
+2. **Discovers current free, tool-capable models dynamically** via
+   `openclaw models scan --json --no-probe --yes --max-candidates 8` (no
+   API key required, no live inference calls — it lists the current free
+   catalog). No specific OpenRouter model ID is ever hardcoded in
+   `install.sh`, since that catalog changes over time; candidates are
+   filtered to `supportsToolsMeta: true` (needed for `sessions_spawn`
+   tool-use compatibility) and the first 1-2 are selected. Note:
+   `--max-candidates` caps the probe-selected set in probe mode; with
+   `--no-probe` it still returned the full free catalog (17 entries) in
+   testing here, so it's the installer's own `[0:2]` slice — not the flag —
+   that actually limits the pick to two models.
+3. **Wires them in, without clobbering an existing choice:**
+   - Adds them to `agents.defaults.model.fallbacks` via
+     `openclaw models fallbacks add <modelRef>` — this is OpenClaw's own
+     scoped surface for the fallback list; it appends and de-dupes rather
+     than replacing the array, so any fallbacks a user already configured
+     are preserved. As a side effect, if `agents.defaults.model` was
+     previously the plain-string shorthand, this command normalizes it into
+     the `{primary, fallbacks}` object form — the primary *value* is
+     preserved, but the config *shape* changes from a string to an object.
+   - Sets `agents.defaults.utilityModel` and `agents.defaults.subagents.model`
+     to the first selected free model — but **only if each path is
+     currently unset**. If either is already explicitly set to something
+     else (for example, a Spark/vLLM model wired up per
+     [`SPARK.md`](./SPARK.md) §3, which recommends setting
+     `agents.defaults.subagents.model` for exactly this kind of routing),
+     that value is left untouched and a warning is printed instead of
+     overwriting it.
+4. **Sets the primary router, conditionally:** `agents.defaults.model.primary`
+   is set to `openrouter/auto` — OpenRouter's own built-in per-prompt
+   dynamic router — but only if no primary is already explicitly configured.
+   `agents.defaults.model` accepts either a plain string (shorthand for
+   "primary") or an object (`{primary, fallbacks}`); the script checks the
+   bare value first so it doesn't mistake an existing string-shorthand
+   primary for "unset" and silently convert/overwrite it. If a primary is
+   already set (either form), it's left untouched and a warning is printed.
+
+Every step above is idempotent — rerunning `bash install.sh --openclaw`
+reaches the same end state rather than duplicating fallback entries or
+re-warning about things that already match. "Idempotent" here means
+*stable*, not *always-refreshed*: once a value is set (by this script or by
+hand), later reruns treat it as an existing explicit choice and leave it
+alone, even if a fresher `models scan` would have picked a different free
+model.

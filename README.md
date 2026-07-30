@@ -41,7 +41,8 @@ manhattan-orchestrator/
 ├── skills/
 │   └── manhattan-orchestrator/
 │       ├── SKILL.md                             ← the orchestrator skill
-│       └── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
+│       ├── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
+│       └── SPARK.md                             ← unvalidated LAN inference (Spark/vLLM/llama.cpp) recipe
 └── agents/
     ├── engineering-software-architect.md
     ├── engineering-backend-architect.md
@@ -257,9 +258,47 @@ omitting it changes nothing about the default install. When passed, it will:
 but a running gateway process only picks up the new `maxSpawnDepth` after a
 restart.
 
+### OpenRouter free-model provisioning
+
+`--openclaw` also provisions [OpenRouter](https://openrouter.ai) as a
+cost-capped, dynamically-routed model source — but only if
+**`OPENROUTER_API_KEY` is set in the environment first**:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+bash install.sh --openclaw
+```
+
+If the env var isn't set, this step is skipped with a clear message (exit 0,
+same graceful-skip pattern as a missing `openclaw` binary) — the rest of
+`--openclaw` still runs. When the key is present, it:
+
+1. Registers the key non-interactively via
+   `openclaw models auth paste-api-key --provider openrouter` (piped on
+   stdin — the raw key is never written into any file this repo tracks).
+2. Discovers 1-2 current free, tool-capable OpenRouter models via
+   `openclaw models scan --json --no-probe` (no model ID is ever
+   hardcoded, since the free-tier catalog changes) and adds them as
+   `agents.defaults.model.fallbacks` entries (appended/de-duped via
+   `openclaw models fallbacks add`, not clobbered) and sets
+   `agents.defaults.utilityModel` / `agents.defaults.subagents.model` to one
+   of them.
+3. Sets `agents.defaults.model.primary` to `openrouter/auto` (OpenRouter's
+   own dynamic per-prompt router) — **only if no primary model is already
+   explicitly configured**. If you've already set a primary (either the
+   plain-string shorthand or `agents.defaults.model.primary`), it's left
+   untouched and a warning is printed instead of overwriting it.
+
+All of the above is idempotent — rerunning reaches the same end state
+rather than duplicating fallback entries.
+
 See [`skills/manhattan-orchestrator/OPENCLAW.md`](skills/manhattan-orchestrator/OPENCLAW.md)
 for the OpenClaw-specific persona-injection pattern (`sessions_spawn` instead
-of the `Task`/`Agent` tool) and the three-tier depth mapping.
+of the `Task`/`Agent` tool) and the three-tier depth mapping, and
+[`skills/manhattan-orchestrator/SPARK.md`](skills/manhattan-orchestrator/SPARK.md)
+for an (unvalidated, no hardware to test against) recipe for routing
+sub-agent work to a local LAN inference box (e.g. an NVIDIA Spark) via
+vLLM/SGLang/llama.cpp.
 
 ---
 
