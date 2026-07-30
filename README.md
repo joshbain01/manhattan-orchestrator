@@ -40,7 +40,9 @@ manhattan-orchestrator/
 ├── install.sh                                   ← one-command installer
 ├── skills/
 │   └── manhattan-orchestrator/
-│       └── SKILL.md                             ← the orchestrator skill
+│       ├── SKILL.md                             ← the orchestrator skill
+│       ├── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
+│       └── SPARK.md                             ← unvalidated LAN inference (Spark/vLLM/llama.cpp) recipe
 └── agents/
     ├── engineering-software-architect.md
     ├── engineering-backend-architect.md
@@ -220,6 +222,83 @@ A *different* agent than the one that built the solution verifies it. The Devil'
 
 #### Phase 5: Deliver (Inverted Pyramid)
 Key answer first, then confidence level, then supporting facts, tagged as Verified Fact / Reported Fact / Assumption / Hypothesis.
+
+---
+
+## OpenClaw
+
+[OpenClaw](https://docs.openclaw.ai) is a separate multi-agent CLI/gateway
+with its own native sub-agent primitive (`sessions_spawn`). The skill install
+already works for OpenClaw with **zero changes** — OpenClaw auto-discovers
+skills from the same `~/.agents/skills/*/SKILL.md` convention this repo
+installs into.
+
+The one real gap is that OpenClaw's orchestrator-style nesting (main agent →
+orchestrator sub-agent → worker sub-sub-agent) is disabled by default
+(`maxSpawnDepth: 1`). Passing `--openclaw` to `install.sh` wires that up:
+
+```bash
+bash install.sh --openclaw
+```
+
+This is combinable with `--skill-only` / `--agents-only` and is opt-in only —
+omitting it changes nothing about the default install. When passed, it will:
+
+1. Skip silently (exit 0) with a warning if the `openclaw` binary isn't on `PATH`.
+2. Run `openclaw config set agents.defaults.subagents.maxSpawnDepth 2` and
+   `openclaw config set agents.defaults.subagents.maxChildrenPerAgent 5`
+   (both idempotent — safe to rerun). Each write is tracked independently: if
+   one succeeds and the other fails, the script reports the partial result
+   rather than assuming all-or-nothing. (`maxChildrenPerAgent` is already `5`
+   by default in OpenClaw — setting it just pins that value explicitly.)
+3. Run `openclaw config validate` and print the result. A validation failure
+   prints a warning but does not fail the rest of the install.
+
+**Restart the OpenClaw gateway afterward.** `config set` writes immediately,
+but a running gateway process only picks up the new `maxSpawnDepth` after a
+restart.
+
+### OpenRouter free-model provisioning
+
+`--openclaw` also provisions [OpenRouter](https://openrouter.ai) as a
+cost-capped, dynamically-routed model source — but only if
+**`OPENROUTER_API_KEY` is set in the environment first**:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+bash install.sh --openclaw
+```
+
+If the env var isn't set, this step is skipped with a clear message (exit 0,
+same graceful-skip pattern as a missing `openclaw` binary) — the rest of
+`--openclaw` still runs. When the key is present, it:
+
+1. Registers the key non-interactively via
+   `openclaw models auth paste-api-key --provider openrouter` (piped on
+   stdin — the raw key is never written into any file this repo tracks).
+2. Discovers 1-2 current free, tool-capable OpenRouter models via
+   `openclaw models scan --json --no-probe` (no model ID is ever
+   hardcoded, since the free-tier catalog changes) and adds them as
+   `agents.defaults.model.fallbacks` entries (appended/de-duped via
+   `openclaw models fallbacks add`, not clobbered) and sets
+   `agents.defaults.utilityModel` / `agents.defaults.subagents.model` to one
+   of them.
+3. Sets `agents.defaults.model.primary` to `openrouter/auto` (OpenRouter's
+   own dynamic per-prompt router) — **only if no primary model is already
+   explicitly configured**. If you've already set a primary (either the
+   plain-string shorthand or `agents.defaults.model.primary`), it's left
+   untouched and a warning is printed instead of overwriting it.
+
+All of the above is idempotent — rerunning reaches the same end state
+rather than duplicating fallback entries.
+
+See [`skills/manhattan-orchestrator/OPENCLAW.md`](skills/manhattan-orchestrator/OPENCLAW.md)
+for the OpenClaw-specific persona-injection pattern (`sessions_spawn` instead
+of the `Task`/`Agent` tool) and the three-tier depth mapping, and
+[`skills/manhattan-orchestrator/SPARK.md`](skills/manhattan-orchestrator/SPARK.md)
+for an (unvalidated, no hardware to test against) recipe for routing
+sub-agent work to a local LAN inference box (e.g. an NVIDIA Spark) via
+vLLM/SGLang/llama.cpp.
 
 ---
 
