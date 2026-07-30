@@ -40,7 +40,8 @@ manhattan-orchestrator/
 ├── install.sh                                   ← one-command installer
 ├── skills/
 │   └── manhattan-orchestrator/
-│       └── SKILL.md                             ← the orchestrator skill
+│       ├── SKILL.md                             ← the orchestrator skill
+│       └── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
 └── agents/
     ├── engineering-software-architect.md
     ├── engineering-backend-architect.md
@@ -220,6 +221,38 @@ A *different* agent than the one that built the solution verifies it. The Devil'
 
 #### Phase 5: Deliver (Inverted Pyramid)
 Key answer first, then confidence level, then supporting facts, tagged as Verified Fact / Reported Fact / Assumption / Hypothesis.
+
+---
+
+## OpenClaw
+
+[OpenClaw](https://docs.openclaw.ai) is a separate multi-agent CLI/gateway
+with its own native sub-agent primitive (`sessions_spawn`). The skill install
+already works for OpenClaw with **zero changes** — OpenClaw auto-discovers
+skills from the same `~/.agents/skills/*/SKILL.md` convention this repo
+installs into.
+
+The one real gap is that OpenClaw's orchestrator-style nesting (main agent →
+orchestrator sub-agent → worker sub-sub-agent) is disabled by default
+(`maxSpawnDepth: 1`). Passing `--openclaw` to `install.sh` wires that up:
+
+```bash
+bash install.sh --openclaw
+```
+
+This is combinable with `--skill-only` / `--agents-only` and is opt-in only —
+omitting it changes nothing about the default install. When passed, it will:
+
+1. Skip silently (exit 0) with a warning if the `openclaw` binary isn't on `PATH`.
+2. Run `openclaw config set agents.defaults.subagents.maxSpawnDepth 2` and
+   `openclaw config set agents.defaults.subagents.maxChildrenPerAgent 5`
+   (both idempotent — safe to rerun).
+3. Run `openclaw config validate` and print the result. A validation failure
+   prints a warning but does not fail the rest of the install.
+
+See [`skills/manhattan-orchestrator/OPENCLAW.md`](skills/manhattan-orchestrator/OPENCLAW.md)
+for the OpenClaw-specific persona-injection pattern (`sessions_spawn` instead
+of the `Task`/`Agent` tool) and the three-tier depth mapping.
 
 ---
 

@@ -7,6 +7,10 @@
 #    bash install.sh                      # install everything
 #    bash install.sh --skill-only         # install skill only (skip agent personas)
 #    bash install.sh --agents-only        # install agent personas only (skip skill)
+#    bash install.sh --openclaw           # also wire up OpenClaw sub-agent config
+#                                          # (combinable with the flags above;
+#                                          #  opt-in only — omitting it changes
+#                                          #  nothing about the default install)
 # ============================================================
 set -euo pipefail
 
@@ -15,12 +19,14 @@ SKILLS_DEST="$HOME/.agents/skills/manhattan-orchestrator"
 AGENTS_DEST="$HOME/.copilot/agents"
 INSTALL_SKILL=true
 INSTALL_AGENTS=true
+INSTALL_OPENCLAW=false
 
 # ── Argument parsing ──────────────────────────────────────
 for arg in "$@"; do
   case $arg in
     --skill-only)  INSTALL_AGENTS=false ;;
     --agents-only) INSTALL_SKILL=false ;;
+    --openclaw)    INSTALL_OPENCLAW=true ;;
   esac
 done
 
@@ -46,6 +52,44 @@ if $INSTALL_AGENTS; then
   cp "$REPO_DIR/agents/"*.md "$AGENTS_DEST/"
   AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md 2>/dev/null | wc -l)
   success "$AGENT_COUNT agent persona files installed: $AGENTS_DEST"
+fi
+
+# ── OpenClaw wiring ────────────────────────────────────────
+# Everything OpenClaw-specific lives in this one function. It only ever
+# talks to OpenClaw through its own `config set` / `config validate` CLI —
+# never by hand-editing ~/.openclaw/openclaw.json, and it never touches
+# ~/.copilot/agents or ~/.agents/skills (those are already correctly wired
+# by the install steps above; OpenClaw discovers both natively as-is).
+install_openclaw_integration() {
+  info "Wiring up OpenClaw sub-agent orchestration…"
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    warn "OpenClaw not found on PATH, skipping OpenClaw config wiring."
+    return 0
+  fi
+
+  # Enable main → orchestrator → worker nesting (default maxSpawnDepth is 1).
+  # `config set` is idempotent, so rerunning this is always safe.
+  if ! openclaw config set agents.defaults.subagents.maxSpawnDepth 2 \
+    || ! openclaw config set agents.defaults.subagents.maxChildrenPerAgent 5; then
+    warn "Failed to set OpenClaw subagent options — skipping OpenClaw wiring."
+    warn "Continuing install; skill/agents install above is unaffected."
+    return 0
+  fi
+
+  info "Validating OpenClaw config…"
+  if openclaw config validate; then
+    success "OpenClaw config wired: maxSpawnDepth=2, maxChildrenPerAgent=5"
+    success "See skills/manhattan-orchestrator/OPENCLAW.md for the persona-injection pattern (sessions_spawn)."
+  else
+    warn "OpenClaw config validation failed after setting subagent options."
+    warn "Review the output above and check 'openclaw config get agents.defaults.subagents'."
+    warn "Continuing install — this does not affect the skill/agents install above."
+  fi
+}
+
+if $INSTALL_OPENCLAW; then
+  install_openclaw_integration
 fi
 
 # ── VS Code settings reminder ─────────────────────────────
