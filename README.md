@@ -246,9 +246,16 @@ omitting it changes nothing about the default install. When passed, it will:
 1. Skip silently (exit 0) with a warning if the `openclaw` binary isn't on `PATH`.
 2. Run `openclaw config set agents.defaults.subagents.maxSpawnDepth 2` and
    `openclaw config set agents.defaults.subagents.maxChildrenPerAgent 5`
-   (both idempotent — safe to rerun).
+   (both idempotent — safe to rerun). Each write is tracked independently: if
+   one succeeds and the other fails, the script reports the partial result
+   rather than assuming all-or-nothing. (`maxChildrenPerAgent` is already `5`
+   by default in OpenClaw — setting it just pins that value explicitly.)
 3. Run `openclaw config validate` and print the result. A validation failure
    prints a warning but does not fail the rest of the install.
+
+**Restart the OpenClaw gateway afterward.** `config set` writes immediately,
+but a running gateway process only picks up the new `maxSpawnDepth` after a
+restart.
 
 See [`skills/manhattan-orchestrator/OPENCLAW.md`](skills/manhattan-orchestrator/OPENCLAW.md)
 for the OpenClaw-specific persona-injection pattern (`sessions_spawn` instead

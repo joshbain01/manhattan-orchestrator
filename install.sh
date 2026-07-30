@@ -69,23 +69,55 @@ install_openclaw_integration() {
   fi
 
   # Enable main → orchestrator → worker nesting (default maxSpawnDepth is 1).
+  # maxChildrenPerAgent is already 5 by default in OpenClaw — we still set it
+  # explicitly so the value is visible in config rather than left implicit.
   # `config set` is idempotent, so rerunning this is always safe.
-  if ! openclaw config set agents.defaults.subagents.maxSpawnDepth 2 \
-    || ! openclaw config set agents.defaults.subagents.maxChildrenPerAgent 5; then
-    warn "Failed to set OpenClaw subagent options — skipping OpenClaw wiring."
+  #
+  # The two `config set` calls are tracked independently rather than as a
+  # single all-or-nothing unit: if one succeeds and the other fails, the
+  # successful write is already durable in the user's real OpenClaw config,
+  # so the messaging below must reflect that partial state instead of
+  # implying nothing happened.
+  local depth_set=true
+  local children_set=true
+
+  if ! openclaw config set agents.defaults.subagents.maxSpawnDepth 2; then
+    depth_set=false
+    warn "Failed to set agents.defaults.subagents.maxSpawnDepth."
+  fi
+
+  if ! openclaw config set agents.defaults.subagents.maxChildrenPerAgent 5; then
+    children_set=false
+    warn "Failed to set agents.defaults.subagents.maxChildrenPerAgent."
+  fi
+
+  if ! $depth_set && ! $children_set; then
+    warn "Both OpenClaw subagent config writes failed — skipping OpenClaw wiring."
     warn "Continuing install; skill/agents install above is unaffected."
     return 0
+  elif ! $depth_set || ! $children_set; then
+    warn "OpenClaw subagent config was only partially applied (see warnings above)."
+    warn "Some values were written to ~/.openclaw/openclaw.json, others were not — rerun 'bash install.sh --openclaw' to retry the missing one(s)."
   fi
 
   info "Validating OpenClaw config…"
   if openclaw config validate; then
-    success "OpenClaw config wired: maxSpawnDepth=2, maxChildrenPerAgent=5"
+    if $depth_set && $children_set; then
+      success "OpenClaw config wired: maxSpawnDepth=2, maxChildrenPerAgent=5"
+    else
+      success "OpenClaw config validated after a partial write (see warnings above)."
+    fi
+    warn "Restart the OpenClaw gateway for the new maxSpawnDepth to take effect."
     success "See skills/manhattan-orchestrator/OPENCLAW.md for the persona-injection pattern (sessions_spawn)."
   else
     warn "OpenClaw config validation failed after setting subagent options."
     warn "Review the output above and check 'openclaw config get agents.defaults.subagents'."
     warn "Continuing install — this does not affect the skill/agents install above."
   fi
+
+  # Always return success: OpenClaw wiring is never allowed to fail the
+  # overall install, regardless of which branch above was taken.
+  return 0
 }
 
 if $INSTALL_OPENCLAW; then
