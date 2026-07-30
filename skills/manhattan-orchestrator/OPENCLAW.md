@@ -132,7 +132,8 @@ prompt: f"""{persona}...."""   →   task: f"""{persona}...."""
 import os
 
 persona_path = os.path.expanduser("~/.copilot/agents/engineering-software-architect.md")
-persona = open(persona_path).read()
+with open(persona_path, encoding="utf-8") as f:
+    persona = f.read()
 
 sapphire_path = os.path.expanduser("~/apps/sapphire/sapphire-pipeline/")
 
