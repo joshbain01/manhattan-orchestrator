@@ -60,7 +60,8 @@ You must execute every user request using the following mechanical phases, deriv
 │  Phase 4:    │ (4.0) Environment Integrity Gate — Tier A substrate liveness + data-truth
 │  Verify      │ (necessary, not sufficient). (4.1) Golden-Path Slice Probe — Tier B: a
 │              │ real browser renders correct live content DB→API→pixel. Both HARD gates.
-│              │ Then [Verification Plan] + [Devil's Advocate Analysis].
+│              │ Then [Verification Plan], the [Multi-Domain QA Panel] (independent
+│              │ specialist sign-off, risk-gated), and [Devil's Advocate Analysis].
 └──────┬───────┘
        │
        ▼
@@ -217,7 +218,40 @@ Once the Tier A + Tier B gates PASS, when an Implementer subagent reports comple
 Pass the Verifier the implemented code and the original specification. Ask the Verifier to write independent tests. If the Verifier reports failures, route them back to the Implementer.
 For medium/high-risk changes, also pass the result to an Architecture Auditor subagent that did not implement the code.
 
-#### Phase 4.3: Devil's Advocate Review
+#### Phase 4.3: Multi-Domain QA Panel (independent specialist sign-off before "good to go")
+One reviewer sees one slice. A single generalist pass — even a rigorous one — systematically
+misses cross-domain defects: the DB reviewer catches stale data, the frontend reviewer catches the
+masked null-state, the identity reviewer catches the unrotated secret. **The orchestrator may not
+declare a change "good to go" on its own judgment alone when the change is non-trivial.** It must
+convene a panel of independent domain specialists and clear their verdicts first.
+
+**When the panel is required (risk-gated — don't waste a 3-expert panel on a typo):**
+- **HARD requirement** (≥ 2 domains, ≥ 3 for security/data changes) when: Risk Score ≥ 6, OR the change touches a **user-facing vertical slice**, a **security/auth/secrets** boundary, a **data store**, or a **public interface**.
+- **Recommended** (≥ 2 domains) for medium risk (score 3–5).
+- **Skippable** for low-risk trivial changes — but you must state one line justifying the skip.
+
+**Composition rules:**
+- Select specialists by the layers the change actually touches — map to the vertical slice + cross-cutting concerns (e.g. DB→Database Reliability, API→Backend Architect, UI→Frontend Developer, auth/secrets→Identity & Access + Code Reviewer, reliability→SRE).
+- **Every panelist is independent of the Implementer** (the double-blind rule). None may have written the code under review.
+- Give each panelist only its persona + the change + a **fixed return contract**: `Verdict ∈ {Happy, Happy-with-changes, Not-happy}`, up to 4 concrete checkable gaps, and the single **#1 most important fix**.
+
+**Pass condition — ALL must hold before "good to go":**
+1. **No unresolved `Not-happy`.** A Not-happy blocks delivery until fixed or the panelist upgrades.
+2. **Every panelist's #1 fix is resolved** — applied, or explicitly **deferred with a written rationale + owner** (never silently dropped).
+3. **Findings are independently verified by the orchestrator, not rubber-stamped.** A panel verdict is a **Reported Fact** until you reproduce its blocking findings yourself (this is the *Authority/System Substitution* guard — e.g. a panelist's "source is clean" claim must be re-grepped, and a real miss like a secret surviving in adjacent tracked docs must be confirmed before you trust *or* dismiss it).
+4. **You may not overrule a `Not-happy`** without countervailing evidence recorded in Fact Calibration.
+
+```markdown
+### [Multi-Domain QA Panel]
+- **Change under review:** <what + risk score + which slice/boundary it touches>
+- **Panel required?** <HARD / Recommended / Skipped — with one-line justification>
+| Specialist (domain) | Verdict | #1 fix | Resolution (applied / deferred+owner) | Orchestrator re-verified? |
+| :--- | :--- | :--- | :--- | :--- |
+| <e.g. Identity & Access> | <Happy-with-changes> | <rotate the leaked secret> | <deferred — owner: user> | <yes — re-grepped> |
+- **Panel verdict:** <CLEAR → eligible for "good to go" | BLOCKED → unresolved Not-happy / #1 fix>
+```
+
+#### Phase 4.4: Devil's Advocate Review
 Once verification succeeds, you must run the Devil's Advocate self-evaluation before delivering the final answer to the user:
 
 ```markdown
@@ -229,7 +263,7 @@ Once verification succeeds, you must run the Devil's Advocate self-evaluation be
 - **Analytical Mistakes Audit:**
   - *Precision Theater Check:* [Pass / Fail - ensure rounded/calibrated ranges are used instead of false precision]
   - *Correlation vs. Mechanism:* [Pass / Fail - verify causal claims have checked confounding variables]
-  - *Authority/System Substitution:* [Pass / Fail - verify output is tested, not just accepted because 'subagent said so']
+  - *Authority/System Substitution:* [Pass / Fail - verify output is tested, not just accepted because 'subagent said so'; every Multi-Domain QA Panel finding was independently re-verified, not rubber-stamped]
   - *False-Green / Substrate Check:* [Pass / Fail - confirm the Environment Integrity Gate (Phase 4.0) passed, so no empirical claim rests on a dead dependency, silent fallback, or valid-looking null state]
   - *Vertical-Slice Check:* [Pass / Fail - confirm the Golden-Path Slice Probe (Phase 4.1) proved a real browser renders correct live content DB→API→pixel; a user-facing claim that only cleared Tier A is a Hypothesis, not a Verified Fact]
 ```
@@ -246,6 +280,7 @@ When delivering the final result to the user:
    - Did we actively try to disconfirm/prove the solution wrong?
    - Did every empirical/live claim clear the Environment Integrity Gate (Phase 4.0), or is it clearly labeled `[Unverifiable — substrate down]`?
    - Did every user-facing claim clear the Golden-Path Slice Probe (Phase 4.1) in a real browser, or is it labeled `[Unverifiable — slice broken]` / downgraded to Hypothesis?
+   - For any non-trivial/high-risk change, did the Multi-Domain QA Panel (Phase 4.3) CLEAR — no unresolved `Not-happy`, every panelist's #1 fix resolved or deferred-with-rationale, and each blocking finding independently re-verified by the orchestrator?
    - If the user reads only the first paragraph, is the understanding correct and calibrated?
 
 ### 5.1 Architecture Acceptance Checklist (Mandatory for code changes)

@@ -114,7 +114,7 @@ The orchestrator will run through its full five-phase playbook automatically:
 | **1 — Request Audit** | Restates the request, surfaces ambiguities, defines the deliverable |
 | **2 — Decompose & Risk Matrix** | Breaks the problem into a dependency tree with U×I risk scores |
 | **3 — Delegate** | Spawns specialized sub-agents with narrow, compartmentalized context |
-| **4 — Verify** | Two hard gates before any live claim — Tier A Environment Integrity (substrate liveness + DB data-truth) and Tier B Golden-Path Slice Probe (a real browser renders correct live content DB→API→pixel) — then an independent verification agent audits every load-bearing claim |
+| **4 — Verify** | Two hard gates before any live claim — Tier A Environment Integrity (substrate liveness + DB data-truth) and Tier B Golden-Path Slice Probe (a real browser renders correct live content DB→API→pixel) — then an independent verification agent plus a risk-gated Multi-Domain QA Panel (2–3+ independent specialists must sign off) audit every load-bearing claim before "good to go" |
 | **5 — Deliver** | Inverted-pyramid answer with calibrated confidence and fact tags |
 
 ---
