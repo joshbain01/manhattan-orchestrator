@@ -39,6 +39,9 @@ THRESHOLD="${RESTART_THRESHOLD:-5}"
 INTERVAL="${SAMPLE_INTERVAL:-8}"
 PROBES=()
 ASSERTS=()
+# Set CURL_INSECURE=1 to pass -k (skip TLS verification) — disabled by default.
+CURL_K_FLAG=""
+[ "${CURL_INSECURE:-}" = "1" ] && CURL_K_FLAG="-k"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,7 +95,7 @@ fi
 # --- Check 2: optional readiness probes --------------------------------------
 for url in "${PROBES[@]:-}"; do
   [ -z "$url" ] && continue
-  if curl -fsS -m 10 -k "$url" >/dev/null 2>&1; then
+  if curl -fsS -m 10 $CURL_K_FLAG "$url" >/dev/null 2>&1; then
     echo "  ok:   probe ${url} answered"
   else
     echo "  FAIL: probe ${url} did not answer (dependency not ready)"
@@ -103,12 +106,14 @@ done
 # --- Check 3: optional data-truth assertions (each must exit 0) ---------------
 # These catch the silent-empty / stale-data class that liveness cannot: e.g. a
 # freshness-bounded non-empty query, a doc count > 0, or cluster status != red.
+_assert_idx=0
 for cmd in "${ASSERTS[@]:-}"; do
   [ -z "$cmd" ] && continue
+  _assert_idx=$((_assert_idx + 1))
   if bash -c "$cmd" >/dev/null 2>&1; then
-    echo "  ok:   assert passed: ${cmd}"
+    echo "  ok:   assert #${_assert_idx} passed"
   else
-    echo "  FAIL: assert failed (non-zero exit): ${cmd}"
+    echo "  FAIL: assert #${_assert_idx} failed (non-zero exit)"
     fail=1
   fi
 done

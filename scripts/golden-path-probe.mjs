@@ -51,9 +51,13 @@ const ROW_SELECTOR = process.env.ROW_SELECTOR || '[data-testid="event-log-row"]'
 const EMPTY_SELECTOR = process.env.EMPTY_SELECTOR || '[data-testid="event-logs-empty-state"]';
 const EXPECT_TEXT = process.env.EXPECT_TEXT || '';
 const API_URL_RE = new RegExp(process.env.API_URL_RE || '/api/');
-const MIN_ROWS = parseInt(process.env.MIN_ROWS || '1', 10);
+const _minRowsRaw = parseInt(process.env.MIN_ROWS || '1', 10);
+if (Number.isNaN(_minRowsRaw)) { console.error('[Phase 4.1] setup error: MIN_ROWS must be a number'); process.exit(2); }
+const MIN_ROWS = _minRowsRaw;
 const LIVE_ASSERT = process.env.LIVE_ASSERT || '';
-const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '15000', 10);
+const _timeoutRaw = parseInt(process.env.TIMEOUT_MS || '15000', 10);
+if (Number.isNaN(_timeoutRaw)) { console.error('[Phase 4.1] setup error: TIMEOUT_MS must be a number'); process.exit(2); }
+const TIMEOUT_MS = _timeoutRaw;
 
 const failures = [];
 const consoleErrors = [];
@@ -66,7 +70,7 @@ page.on('pageerror', (e) => consoleErrors.push(String(e)));
 page.on('response', (r) => { if (API_URL_RE.test(r.url()) && r.status() >= 400) badResponses.push(`${r.status()} ${r.url()}`); });
 
 try {
-  await page.goto(URL, { waitUntil: 'networkidle', timeout: TIMEOUT_MS });
+  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: TIMEOUT_MS });
 
   // 1 + 2: real rows present AND empty-state absent (the incident-killer pair)
   await page.waitForSelector(ROW_SELECTOR, { timeout: TIMEOUT_MS }).catch(() => {});
