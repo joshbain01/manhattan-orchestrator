@@ -1,16 +1,10 @@
 # Manhattan Orchestrator
 
-> *"The problems we face are not technical problems. They are problems of complexity, uncertainty, and coordination. The engineer's job is to impose order on chaos — and to know, precisely, where the chaos lives."*
-
 ---
 
 ## The Story
 
 In 1942, the United States launched the most ambitious engineering undertaking in human history. The Manhattan Project wasn't just a physics experiment — it was a masterclass in managing staggering complexity under conditions of radical uncertainty. Thousands of the world's brightest minds worked across multiple secret sites, each team knowing only what they absolutely needed to know. No one person held the whole picture. And yet, through rigorous decomposition, strict compartmentalization, and relentless independent verification, they succeeded.
-
-The greatest engineering challenges of our era demand the same discipline.
-
-When you're diagnosing why a distributed system is silently dropping 3% of events, designing an authentication layer that must survive a decade of team turnover, or deciding whether a proposed architecture will hold under load you can't yet predict — the failure mode is almost never a lack of intelligence. It's a failure of *structure*. Context bleeds between concerns. Assumptions go unverified. The person who built the thing is the same person who checked it.
 
 **The Manhattan Orchestrator** brings that same project discipline to your AI-assisted engineering work.
 
@@ -22,10 +16,6 @@ It ships with **55 pre-built engineering specialist personas** (the Engineering 
 
 ## Why This Works
 
-The Manhattan Project succeeded because Oppenheimer understood something counterintuitive: **giving people less information makes them more effective, not less.** A physicist working on implosion lens geometry didn't need to know about plutonium production yields. The compartmentalization wasn't paranoia — it was cognitive hygiene. It kept each team's mental model clean, their output precise, and their verification independent.
-
-The same principle applies to AI agents.
-
 When a single LLM context window holds the full problem, the full codebase, the full history of the conversation, and the full solution — it becomes a physicist who also runs the reactor, designs the detonator, and checks their own math. Errors compound invisibly. The system gains false confidence. The output looks rigorous but isn't.
 
 The Manhattan Orchestrator enforces need-to-know at every tier:
@@ -35,7 +25,7 @@ The Manhattan Orchestrator enforces need-to-know at every tier:
 - The **verifier** sees the output and the spec — never the reasoning that produced the output
 - Every claim in the final delivery is explicitly tagged: **Verified Fact**, **Reported Fact**, **Assumption**, or **Hypothesis**
 
-This is not a chatbot with a structured prompt. It is a system designed to *fail loudly* when assumptions are wrong, and to *surface the boundary* between what is known and what is guessed.
+It is a system designed to *fail loudly* when assumptions are wrong, and to *surface the boundary* between what is known and what is guessed.
 
 ---
 
