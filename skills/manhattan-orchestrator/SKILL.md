@@ -301,12 +301,8 @@ Match the task domain to the specialist. When in doubt, prefer a **narrower spec
 | Self-healing data pipelines | 🧬 AI Data Remediation Engineer | `engineering-ai-data-remediation-engineer.md` |
 | Data visualization, charts | 📈 Data Visualization Engineer | `engineering-data-visualization-engineer.md` |
 | Autonomous LLM cost/routing | ⚡ Autonomous Optimization Architect | `engineering-autonomous-optimization-architect.md` |
-| Feishu/Lark integrations | 🔗 Feishu Integration Developer | `engineering-feishu-integration-developer.md` |
-| WeChat Mini Programs | 💬 WeChat Mini Program Developer | `engineering-wechat-mini-program-developer.md` |
-| WordPress shopping cart | 🛍️ WordPress Shopping Cart Engineer | `engineering-wordpress-shopping-cart.md` |
 | Drupal e-commerce | 🛒 Drupal Shopping Cart Engineer | `engineering-drupal-shopping-cart.md` |
 | Filament PHP admin UX | 🔧 Filament Optimization Specialist | `engineering-filament-optimization-specialist.md` |
-| GaussDB / Huawei DB | 🗄️ GaussDB Expert Engineer | `engineering-gaussdb-expert.md` |
 | Mobile app release, signing, TestFlight | 🚀 Mobile Release Engineer | `engineering-mobile-release-engineer.md` |
 | Email thread analysis and extraction | 📧 Email Intelligence Engineer | `engineering-email-intelligence-engineer.md` |
 | USWDS / US federal design system | 🏛️ USWDS Developer | `engineering-uswds-developer.md` |
@@ -314,7 +310,7 @@ Match the task domain to the specialist. When in doubt, prefer a **narrower spec
 | CMS (WordPress / Drupal) dev | 🧱 CMS Developer | `engineering-cms-developer.md` |
 | OrgScript grammar and AST | 📜 OrgScript Engineer | `engineering-orgscript-engineer.md` |
 
-**All 58 agent files live at:** `/home/jbain/.copilot/agents/engineering-*.md`
+**All 55 agent files live at:** `/home/jbain/.copilot/agents/engineering-*.md`
 
 ---
 
