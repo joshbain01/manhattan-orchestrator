@@ -1,14 +1,45 @@
 # Manhattan Orchestrator
 
-> An expert orchestration skill for GitHub Copilot that solves ambiguous, high-stakes problems using strict compartmentalization, risk-weighted decomposition, and independent verification — modeled on the Manhattan Project's need-to-know discipline.
+> *"The problems we face are not technical problems. They are problems of complexity, uncertainty, and coordination. The engineer's job is to impose order on chaos — and to know, precisely, where the chaos lives."*
+
+---
+
+## The Story
+
+In 1942, the United States launched the most ambitious engineering undertaking in human history. The Manhattan Project wasn't just a physics experiment — it was a masterclass in managing staggering complexity under conditions of radical uncertainty. Thousands of the world's brightest minds worked across multiple secret sites, each team knowing only what they absolutely needed to know. No one person held the whole picture. And yet, through rigorous decomposition, strict compartmentalization, and relentless independent verification, they succeeded.
+
+The greatest engineering challenges of our era demand the same discipline.
+
+When you're diagnosing why a distributed system is silently dropping 3% of events, designing an authentication layer that must survive a decade of team turnover, or deciding whether a proposed architecture will hold under load you can't yet predict — the failure mode is almost never a lack of intelligence. It's a failure of *structure*. Context bleeds between concerns. Assumptions go unverified. The person who built the thing is the same person who checked it.
+
+**The Manhattan Orchestrator** brings that same project discipline to your AI-assisted engineering work.
+
+It is a [VS Code Copilot custom skill](https://code.visualstudio.com/docs/copilot/copilot-customization) that transforms Copilot into a structured, multi-agent problem-solving system. Instead of answering a question, it runs a five-phase playbook: auditing the request for hidden assumptions, decomposing the problem into a risk-weighted dependency tree, delegating each slice to a domain specialist who sees *only their piece*, verifying results through an independent agent who had no hand in building them, and delivering a calibrated answer with every claim explicitly tagged as fact, assumption, or hypothesis.
+
+It ships with **55 pre-built engineering specialist personas** (the Engineering Division) — each a deep-domain expert the orchestrator can spawn as a Tier 2 specialist. A Backend Architect designs the module. A Code Reviewer — who never saw the design discussion — audits it. The orchestrator arbitrates. The system does not trust itself.
+
+---
+
+## Why This Works
+
+The Manhattan Project succeeded because Oppenheimer understood something counterintuitive: **giving people less information makes them more effective, not less.** A physicist working on implosion lens geometry didn't need to know about plutonium production yields. The compartmentalization wasn't paranoia — it was cognitive hygiene. It kept each team's mental model clean, their output precise, and their verification independent.
+
+The same principle applies to AI agents.
+
+When a single LLM context window holds the full problem, the full codebase, the full history of the conversation, and the full solution — it becomes a physicist who also runs the reactor, designs the detonator, and checks their own math. Errors compound invisibly. The system gains false confidence. The output looks rigorous but isn't.
+
+The Manhattan Orchestrator enforces need-to-know at every tier:
+
+- The **orchestrator** coordinates but rarely touches the work directly
+- Each **specialist** receives only the context required for their slice
+- The **verifier** sees the output and the spec — never the reasoning that produced the output
+- Every claim in the final delivery is explicitly tagged: **Verified Fact**, **Reported Fact**, **Assumption**, or **Hypothesis**
+
+This is not a chatbot with a structured prompt. It is a system designed to *fail loudly* when assumptions are wrong, and to *surface the boundary* between what is known and what is guessed.
 
 ---
 
 ## What This Is
-
-The **Manhattan Orchestrator** is a [VS Code Copilot custom skill](https://code.visualstudio.com/docs/copilot/copilot-customization) that transforms Copilot into a structured, multi-agent problem-solving system. Instead of answering questions directly, it decomposes problems into a dependency tree, delegates each piece to a specialized sub-agent, independently verifies results, and delivers a rigorous, calibrated answer.
-
-It ships with **58 pre-built engineering specialist personas** (the Engineering Division) that the orchestrator can spawn as Tier 2 experts — each with its own domain knowledge, workflow, and output contract.
 
 ---
 
@@ -24,7 +55,7 @@ manhattan-orchestrator/
     ├── engineering-software-architect.md
     ├── engineering-backend-architect.md
     ├── engineering-sre.md
-    └── ... (58 total)
+    └── ... (55 total)
 ```
 
 ---
@@ -98,7 +129,7 @@ The orchestrator will run through its full five-phase playbook automatically:
 
 ---
 
-## The Engineering Division (58 Specialists)
+## The Engineering Division (55 Specialists)
 
 The orchestrator can spawn any of these specialists as Tier 2 sub-agents. Each has a full persona, domain expertise, and output contract.
 
@@ -149,13 +180,10 @@ The orchestrator can spawn any of these specialists as Tier 2 sub-agents. Each h
 | 🧬 AI Data Remediation Engineer | Self-healing data pipelines | `engineering-ai-data-remediation-engineer.md` |
 | 📈 Data Visualization Engineer | Data visualization, charts | `engineering-data-visualization-engineer.md` |
 | ⚡ Autonomous Optimization Architect | Autonomous LLM cost/routing | `engineering-autonomous-optimization-architect.md` |
-| 🔗 Feishu Integration Developer | Feishu/Lark integrations | `engineering-feishu-integration-developer.md` |
-| 💬 WeChat Mini Program Developer | WeChat Mini Programs | `engineering-wechat-mini-program-developer.md` |
-| 🛍️ WordPress Shopping Cart Engineer | WordPress e-commerce / WooCommerce | `engineering-wordpress-shopping-cart.md` |
+| ️ WordPress Shopping Cart Engineer | WordPress e-commerce / WooCommerce | `engineering-wordpress-shopping-cart.md` |
 | 🛒 Drupal Shopping Cart Engineer | Drupal e-commerce | `engineering-drupal-shopping-cart.md` |
 | 🔧 Filament Optimization Specialist | Filament PHP admin UX | `engineering-filament-optimization-specialist.md` |
-| 🗄️ GaussDB Expert Engineer | GaussDB / Huawei DB | `engineering-gaussdb-expert.md` |
-| 🚀 Mobile Release Engineer | Mobile app release, signing, TestFlight | `engineering-mobile-release-engineer.md` |
+|  Mobile Release Engineer | Mobile app release, signing, TestFlight | `engineering-mobile-release-engineer.md` |
 | 📧 Email Intelligence Engineer | Email thread analysis and extraction | `engineering-email-intelligence-engineer.md` |
 | 🏛️ USWDS Developer | USWDS / US federal design system | `engineering-uswds-developer.md` |
 | 🖧 IT Service Manager | IT service management (ITIL 4) | `engineering-it-service-manager.md` |
