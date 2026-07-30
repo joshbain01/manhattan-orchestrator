@@ -13,14 +13,23 @@
 #   2. No RUNNING container's RestartCount is CLIMBING across two samples.
 #      ("Up" alone is insufficient — a crash-looper reports "Up" between kills.)
 # Optional readiness probes assert a dependency actually ANSWERS (not just "running").
+# Optional --assert-cmd checks assert DATA TRUTH (not just liveness): each command must
+# exit 0, so you can require e.g. "newest row < 10m old AND count > 0" or cluster != red.
+# A live container that answers a probe can still serve zero/stale/wrong data — these
+# assertions are how you catch the silent-empty and stale-data classes.
 #
 # Usage:
-#   scripts/env-integrity-gate.sh [--threshold N] [--interval S] [--probe URL]...
+#   scripts/env-integrity-gate.sh [--threshold N] [--interval S] \
+#       [--probe URL]... [--assert-cmd 'shell that must exit 0']...
 #
 # Env overrides:
 #   DOCKER             docker command (default "docker"; e.g. DOCKER="sudo -n docker")
 #   RESTART_THRESHOLD  max tolerated RestartCount for a running container (default 5)
 #   SAMPLE_INTERVAL    seconds between the two restart-count samples (default 8; 0 = skip delta)
+#
+# NOTE: This script is Tier A — substrate liveness + data-truth pre-filters. It is
+# NECESSARY BUT NOT SUFFICIENT. A passing run does NOT certify the user-facing vertical
+# slice; pair it with the Tier B golden-path browser probe (scripts/golden-path-probe.mjs).
 #
 # Exit codes: 0 = PASS (substrate healthy) · 1 = FAIL (substrate unhealthy) · 2 = usage/tooling error.
 set -euo pipefail
@@ -29,13 +38,15 @@ DOCKER="${DOCKER:-docker}"
 THRESHOLD="${RESTART_THRESHOLD:-5}"
 INTERVAL="${SAMPLE_INTERVAL:-8}"
 PROBES=()
+ASSERTS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --threshold) THRESHOLD="$2"; shift 2 ;;
-    --interval)  INTERVAL="$2";  shift 2 ;;
-    --probe)     PROBES+=("$2");  shift 2 ;;
-    -h|--help)   grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --threshold)  THRESHOLD="$2"; shift 2 ;;
+    --interval)   INTERVAL="$2";  shift 2 ;;
+    --probe)      PROBES+=("$2");  shift 2 ;;
+    --assert-cmd) ASSERTS+=("$2"); shift 2 ;;
+    -h|--help)    grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -85,6 +96,19 @@ for url in "${PROBES[@]:-}"; do
     echo "  ok:   probe ${url} answered"
   else
     echo "  FAIL: probe ${url} did not answer (dependency not ready)"
+    fail=1
+  fi
+done
+
+# --- Check 3: optional data-truth assertions (each must exit 0) ---------------
+# These catch the silent-empty / stale-data class that liveness cannot: e.g. a
+# freshness-bounded non-empty query, a doc count > 0, or cluster status != red.
+for cmd in "${ASSERTS[@]:-}"; do
+  [ -z "$cmd" ] && continue
+  if bash -c "$cmd" >/dev/null 2>&1; then
+    echo "  ok:   assert passed: ${cmd}"
+  else
+    echo "  FAIL: assert failed (non-zero exit): ${cmd}"
     fail=1
   fi
 done
