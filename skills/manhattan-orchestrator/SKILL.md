@@ -57,8 +57,9 @@ You must execute every user request using the following mechanical phases, deriv
        │
        ▼
 ┌──────────────┐
-│  Phase 4:    │ Cross-verify results. Classify the claim type using [Verification Plan].
-│  Verify      │ Run the [Devil's Advocate Analysis] check prior to delivery.
+│  Phase 4:    │ FIRST run the [Environment Integrity Gate] (HARD GATE) — no empirical
+│  Verify      │ claim is trusted on a dead substrate. Then cross-verify results via
+│              │ [Verification Plan] and run the [Devil's Advocate Analysis].
 └──────┬───────┘
        │
        ▼
@@ -114,7 +115,46 @@ Whenever receiving output or claims from a subagent or system execution, you mus
 - `[State Tag] <Claim>: [Verified Fact / Reported Fact / Assumption / Hypothesis]`
 
 ### Phase 4: Independent Cross-Verification & Self-Evaluation
-When an Implementer subagent reports completion, before running verification, output the plan:
+
+#### Phase 4.0: Environment Integrity Gate (HARD GATE — run FIRST)
+A verification is only as trustworthy as the environment it runs in. **Green tests on a dead
+dependency are a false green.** Before accepting ANY claim whose evidence passes through a live
+system — Claim Type `Empirical Fact`, or a `Prediction` validated against a live system — you
+MUST assert the substrate is healthy. This gate does **not** apply to pure `Computation` or
+`Judgment` claims that touch no live system.
+
+**This is a HARD gate: if it fails, verification is blocked and delivery cannot proceed on the
+affected claim.** The claim is marked `[Unverifiable — substrate down]` until the substrate is
+repaired, or it is explicitly downgraded to `Hypothesis` with the outage disclosed in the Fact
+Calibration table. Never let a passing test on a broken substrate be reported as a Verified Fact.
+
+Run the gate checklist against every dependency the claim's evidence flows through:
+1. **Enumerate the substrate** — every process / container / service / network hop the evidence passes through.
+2. **Liveness** — each dependency is up AND *not crash-looping*. "Up" alone is insufficient: a crash-looper reports "Up" between kills. For containers, RestartCount must be low AND not climbing across two samples.
+3. **Readiness** — the dependency *answers a real request* (health endpoint / query), not merely "running".
+4. **Data-path truth** — the specific data the claim relies on is actually reachable through the path under test (not a mock, stale cache, or fallback).
+5. **No silent fallback** — confirm the system under test is not rendering a valid-looking empty / degraded / null state that masks a dead dependency (the exact trap that lets green QA hide a broken backend).
+
+Output the gate result before the Verification Plan:
+
+```markdown
+### [Environment Integrity Gate]
+- **Claim(s) gated:** <the empirical/live claims this substrate underpins>
+- **Substrate enumerated:** <processes / containers / services / endpoints in the evidence path>
+- **Liveness & no crash-loop:** <PASS/FAIL — evidence, e.g. restart counts stable across 2 samples>
+- **Readiness (answers a request):** <PASS/FAIL — probe result>
+- **Data-path truth (no mock/fallback):** <PASS/FAIL — the real data was reached>
+- **Verdict:** <PASS → proceed to Verification Plan | FAIL → block; claim = [Unverifiable — substrate down]>
+```
+
+Reference implementation: [`scripts/env-integrity-gate.sh`](../../scripts/env-integrity-gate.sh)
+detects crash-looping containers (RestartCount over threshold **or** climbing across two samples)
+and runs optional readiness probes; it exits non-zero to fail CI/QA loudly. Extend it per substrate
+(add DB pings, queue depth, endpoint probes). Wire it in as a preflight before any `live`/integration
+verification so a silently broken dependency stops the run instead of producing a false green.
+
+#### Phase 4.1: Verification Plan
+Once the Environment Integrity Gate PASSES, when an Implementer subagent reports completion, before running verification, output the plan:
 
 ```markdown
 ### [Verification Plan]
@@ -140,6 +180,7 @@ Once verification succeeds, you must run the Devil's Advocate self-evaluation be
   - *Precision Theater Check:* [Pass / Fail - ensure rounded/calibrated ranges are used instead of false precision]
   - *Correlation vs. Mechanism:* [Pass / Fail - verify causal claims have checked confounding variables]
   - *Authority/System Substitution:* [Pass / Fail - verify output is tested, not just accepted because 'subagent said so']
+  - *False-Green / Substrate Check:* [Pass / Fail - confirm the Environment Integrity Gate (Phase 4.0) passed, so no empirical claim rests on a dead dependency, silent fallback, or valid-looking null state]
 ```
 
 ### Phase 5: Delivery & the Inverted Pyramid
@@ -152,6 +193,7 @@ When delivering the final result to the user:
    - Can we point to the independent check for each load-bearing claim?
    - Are assumptions and reported facts clearly labeled with their if-wrong consequences?
    - Did we actively try to disconfirm/prove the solution wrong?
+   - Did every empirical/live claim clear the Environment Integrity Gate (Phase 4.0), or is it clearly labeled `[Unverifiable — substrate down]`?
    - If the user reads only the first paragraph, is the understanding correct and calibrated?
 
 ### 5.1 Architecture Acceptance Checklist (Mandatory for code changes)

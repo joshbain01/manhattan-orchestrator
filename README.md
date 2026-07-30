@@ -114,7 +114,7 @@ The orchestrator will run through its full five-phase playbook automatically:
 | **1 — Request Audit** | Restates the request, surfaces ambiguities, defines the deliverable |
 | **2 — Decompose & Risk Matrix** | Breaks the problem into a dependency tree with U×I risk scores |
 | **3 — Delegate** | Spawns specialized sub-agents with narrow, compartmentalized context |
-| **4 — Verify** | Independent verification agent audits every load-bearing claim |
+| **4 — Verify** | Environment Integrity Gate (hard) blocks false-green claims on a dead substrate, then an independent verification agent audits every load-bearing claim |
 | **5 — Deliver** | Inverted-pyramid answer with calibrated confidence and fact tags |
 
 ---
