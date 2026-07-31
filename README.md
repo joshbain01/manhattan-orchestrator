@@ -75,39 +75,46 @@ bash install.sh
 This will:
 1. Copy `skills/manhattan-orchestrator/SKILL.md` → `~/.agents/skills/manhattan-orchestrator/SKILL.md` (with your `$HOME` path substituted in)
 2. Copy all 58 `agents/engineering-*.md` files → `~/.copilot/agents/`
+3. Copy the `manhattan-orchestrator.agent.md` custom agent → `~/.copilot/agents/` — this is what appears in the VS Code Agent-mode dropdown
 
-### Configure VS Code
+### Use it in VS Code
 
-Open VS Code Settings JSON (`Ctrl+,` → `Open Settings JSON`) and add:
+1. Reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
+2. In Copilot Chat (**Agent mode**), open the agent/mode dropdown at the top of the chat input and select **Manhattan Orchestrator**.
+
+In VS Code Agent mode, custom agents appear in this dropdown. Prompt-file and skill *slash commands do not reliably surface there*, so the bundled custom agent is the dependable entry point.
+
+**Optional** — to also expose the raw skill as a `/`-style command in chat modes that support it, open VS Code Settings JSON (`Ctrl+,` → `Open Settings JSON`) and add:
 
 ```json
-"github.copilot.chat.promptFilesLocations": [
-  "~/.agents/skills"
-]
+"chat.promptFilesLocations": {
+  "~/.agents/skills": true
+}
 ```
-
-Reload VS Code (`Ctrl+Shift+P` → `Developer: Reload Window`).
 
 ### Verify
 
-In Copilot Chat, type `/manhattan` — it should autocomplete to `/manhattan-orchestrator`.
+Right-click the Chat view → **Diagnostics** to confirm the **Manhattan Orchestrator** agent (and skill) loaded without errors. You should also see *Manhattan Orchestrator* listed in the Agent-mode dropdown.
 
 ---
 
 ## Usage
 
-Invoke the skill with the `/manhattan-orchestrator` command in Copilot Chat:
+Select **Manhattan Orchestrator** from the Agent-mode dropdown, then describe your problem:
 
 ```
-/manhattan-orchestrator I need to redesign our authentication layer to support SSO.
+I need to redesign our authentication layer to support SSO.
 ```
 
-Or by describing a complex problem:
+Or describe a complex problem:
 
 ```
-/manhattan-orchestrator Diagnose why our pipeline is losing ~3% of events in production
+Diagnose why our pipeline is losing ~3% of events in production
 and propose a fix.
 ```
+
+(If you enabled the optional skill slash command above, you can instead type
+`/manhattan-orchestrator ...` in chat modes that support it.)
 
 The orchestrator will run through its full five-phase playbook automatically:
 
@@ -326,9 +333,10 @@ Then configure VS Code settings on the target machine as described in [Installat
 ```bash
 rm -rf ~/.agents/skills/manhattan-orchestrator
 rm -f ~/.copilot/agents/engineering-*.md
+rm -f ~/.copilot/agents/manhattan-orchestrator.agent.md
 ```
 
-Remove the `github.copilot.chat.promptFilesLocations` entry from VS Code settings if no other skills use it.
+Remove the `chat.promptFilesLocations` entry from VS Code settings if no other skills use it.
 
 ---
 

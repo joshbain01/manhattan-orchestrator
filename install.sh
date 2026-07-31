@@ -45,13 +45,21 @@ if $INSTALL_SKILL; then
   success "Skill installed: $SKILLS_DEST/SKILL.md"
 fi
 
-# ── Install agent personas ─────────────────────────────────
+# ── Install agent personas + orchestrator custom agent ─────
 if $INSTALL_AGENTS; then
-  info "Installing 58 engineering agent personas → $AGENTS_DEST"
+  info "Installing engineering agent personas + orchestrator agent → $AGENTS_DEST"
   mkdir -p "$AGENTS_DEST"
   cp "$REPO_DIR/agents/"*.md "$AGENTS_DEST/"
   AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md 2>/dev/null | wc -l)
-  success "$AGENT_COUNT agent persona files installed: $AGENTS_DEST"
+  success "$AGENT_COUNT engineering persona files installed: $AGENTS_DEST"
+  # The Manhattan Orchestrator custom agent is what surfaces in the VS Code
+  # Agent-mode dropdown (prompt-file/skill slash commands do NOT reliably
+  # appear there). cp above already copied it; confirm it landed.
+  if [ -f "$AGENTS_DEST/manhattan-orchestrator.agent.md" ]; then
+    success "Manhattan Orchestrator custom agent installed → $AGENTS_DEST/manhattan-orchestrator.agent.md"
+  else
+    warn "Expected orchestrator agent not found at $AGENTS_DEST/manhattan-orchestrator.agent.md"
+  fi
 fi
 
 # ── OpenClaw wiring ────────────────────────────────────────
@@ -286,20 +294,32 @@ if $INSTALL_OPENCLAW; then
   install_openclaw_integration
 fi
 
-# ── VS Code settings reminder ─────────────────────────────
+# ── VS Code usage instructions ────────────────────────────
 echo ""
 echo "────────────────────────────────────────────────────────"
-echo "  NEXT STEP: Configure VS Code to discover the skill"
+echo "  NEXT STEP: Use it in VS Code"
 echo "────────────────────────────────────────────────────────"
 echo ""
-echo '  Open VS Code settings (Ctrl+,) → "Open Settings JSON"'
-echo '  and add (or merge) this entry:'
+echo '  1. Reload VS Code:'
+echo '       Ctrl+Shift+P → "Developer: Reload Window"'
 echo ""
-echo '  "github.copilot.chat.promptFilesLocations": ['
-echo '    "~/.agents/skills"'
-echo '  ]'
+echo '  2. In Copilot Chat (Agent mode), open the agent/mode'
+echo '     dropdown at the top of the chat input and select'
+echo '     "Manhattan Orchestrator".'
 echo ""
-echo "  Then reload VS Code and type /manhattan-orchestrator"
-echo "  in Copilot Chat to confirm the skill is active."
+echo '     In VS Code Agent mode, custom agents appear in this'
+echo '     dropdown. Prompt-file / skill slash commands do NOT'
+echo '     reliably surface there, so the custom agent is the'
+echo '     dependable entry point.'
+echo ""
+echo '  Optional — also expose the raw skill as a slash command'
+echo '  in chat modes that support it. Add to Settings JSON:'
+echo ""
+echo '       "chat.promptFilesLocations": {'
+echo '         "~/.agents/skills": true'
+echo '       }'
+echo ""
+echo '  Verify: right-click the Chat view → Diagnostics to see'
+echo '  the loaded "Manhattan Orchestrator" agent and skill.'
 echo ""
 success "Done!"
