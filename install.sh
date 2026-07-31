@@ -54,11 +54,15 @@ if $INSTALL_AGENTS; then
   success "$AGENT_COUNT engineering persona files installed: $AGENTS_DEST"
   # The Manhattan Orchestrator custom agent is what surfaces in the VS Code
   # Agent-mode dropdown (prompt-file/skill slash commands do NOT reliably
-  # appear there). cp above already copied it; confirm it landed.
-  if [ -f "$AGENTS_DEST/manhattan-orchestrator.agent.md" ]; then
-    success "Manhattan Orchestrator custom agent installed → $AGENTS_DEST/manhattan-orchestrator.agent.md"
+  # appear there). It MUST be a plain `.md` file (not `.agent.md`) so it loads
+  # via the same Copilot CLI agent bridge as the engineering personas; a
+  # `.agent.md` name routes it through VS Code's native loader, which does not
+  # reliably re-scan on remote reconnect and makes the agent vanish. cp above
+  # already copied it; confirm it landed.
+  if [ -f "$AGENTS_DEST/manhattan-orchestrator.md" ]; then
+    success "Manhattan Orchestrator custom agent installed → $AGENTS_DEST/manhattan-orchestrator.md"
   else
-    warn "Expected orchestrator agent not found at $AGENTS_DEST/manhattan-orchestrator.agent.md"
+    warn "Expected orchestrator agent not found at $AGENTS_DEST/manhattan-orchestrator.md"
   fi
 fi
 

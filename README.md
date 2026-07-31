@@ -75,7 +75,7 @@ bash install.sh
 This will:
 1. Copy `skills/manhattan-orchestrator/SKILL.md` → `~/.agents/skills/manhattan-orchestrator/SKILL.md` (with your `$HOME` path substituted in)
 2. Copy all 58 `agents/engineering-*.md` files → `~/.copilot/agents/`
-3. Copy the `manhattan-orchestrator.agent.md` custom agent → `~/.copilot/agents/` — this is what appears in the VS Code Agent-mode dropdown
+3. Copy the `manhattan-orchestrator.md` custom agent → `~/.copilot/agents/` — this is what appears in the VS Code Agent-mode dropdown (it is a plain `.md`, matching the engineering personas, so it loads via the Copilot CLI agent bridge and survives remote reconnects)
 
 ### Use it in VS Code
 
@@ -333,7 +333,7 @@ Then configure VS Code settings on the target machine as described in [Installat
 ```bash
 rm -rf ~/.agents/skills/manhattan-orchestrator
 rm -f ~/.copilot/agents/engineering-*.md
-rm -f ~/.copilot/agents/manhattan-orchestrator.agent.md
+rm -f ~/.copilot/agents/manhattan-orchestrator.md
 ```
 
 Remove the `chat.promptFilesLocations` entry from VS Code settings if no other skills use it.

@@ -2,9 +2,8 @@
 name: Manhattan Orchestrator
 description: Structured multi-agent problem solving — compartmentalized decomposition, risk-weighted delegation, and independent verification. Modeled on the Manhattan Project's need-to-know discipline.
 argument-hint: Describe the ambiguous problem or goal you want solved.
-color: orange
+color: "#F97316"
 emoji: ⚛️
-agents: ['*']
 ---
 
 # Manhattan Orchestrator
