@@ -57,8 +57,11 @@ You must execute every user request using the following mechanical phases, deriv
        │
        ▼
 ┌──────────────┐
-│  Phase 4:    │ Cross-verify results. Classify the claim type using [Verification Plan].
-│  Verify      │ Run the [Devil's Advocate Analysis] check prior to delivery.
+│  Phase 4:    │ (4.0) Environment Integrity Gate — Tier A substrate liveness + data-truth
+│  Verify      │ (necessary, not sufficient). (4.1) Golden-Path Slice Probe — Tier B: a
+│              │ real browser renders correct live content DB→API→pixel. Both HARD gates.
+│              │ Then [Verification Plan], the [Multi-Domain QA Panel] (independent
+│              │ specialist sign-off, risk-gated), and [Devil's Advocate Analysis].
 └──────┬───────┘
        │
        ▼
@@ -114,7 +117,95 @@ Whenever receiving output or claims from a subagent or system execution, you mus
 - `[State Tag] <Claim>: [Verified Fact / Reported Fact / Assumption / Hypothesis]`
 
 ### Phase 4: Independent Cross-Verification & Self-Evaluation
-When an Implementer subagent reports completion, before running verification, output the plan:
+
+#### Phase 4.0: Environment Integrity Gate — Tier A: substrate liveness + data-truth (HARD GATE, run FIRST)
+A verification is only as trustworthy as the environment it runs in. **Green tests on a dead
+dependency are a false green.** Before accepting ANY claim whose evidence passes through a live
+system — Claim Type `Empirical Fact`, or a `Prediction` validated against a live system — you
+MUST assert the substrate is healthy. This gate does **not** apply to pure `Computation` or
+`Judgment` claims that touch no live system.
+
+**This is a HARD gate: if it fails, verification is blocked and delivery cannot proceed on the
+affected claim.** The claim is marked `[Unverifiable — substrate down]` until the substrate is
+repaired, or it is explicitly downgraded to `Hypothesis` with the outage disclosed in the Fact
+Calibration table. Never let a passing test on a broken substrate be reported as a Verified Fact.
+
+> **Tier A is NECESSARY BUT NOT SUFFICIENT.** "Up + answers a probe" proves a process is alive
+> — it does **not** prove the database serves correct, fresh, non-empty data, and it says nothing
+> about what a user's browser actually renders. Passing Tier A alone downgrades an empirical claim
+> to `Hypothesis`; a full pass requires the Tier B slice probe (Phase 4.1) as well.
+
+Run the gate checklist against every dependency the claim's evidence flows through:
+1. **Enumerate the substrate** — every process / container / service / network hop / data store the evidence passes through.
+2. **Liveness** — each dependency is up AND *not crash-looping*. "Up" alone is insufficient: a crash-looper reports "Up" between kills. For containers, RestartCount must be low AND not climbing across two samples.
+3. **Readiness** — the dependency *answers a real request* (health endpoint / query), not merely "running".
+4. **Data-path truth (esp. databases)** — the specific data the claim relies on is actually present, **fresh, and non-empty** through the path under test. A connection succeeding or a container being "Up" does NOT mean the DB serves the right data. Assert, e.g.:
+   - **Freshness-bounded, non-empty result** on the exact query the app depends on — `newest row < N minutes old AND count > 0` (catches the silent-empty and stale-ingest classes). *This is the single highest-value DB check.*
+   - **Store health, not root ping** — e.g. OpenSearch `_cluster/health.status != red` **and** `<index>/_count > 0` for the index the UI reads (not just `200` on `/`, which is green even while the security index is uninitialized and every authed query 403s).
+   - **Schema/version correctness** — migrations at expected head; expected table/hypertable/index present; connected to the *expected* database/schema.
+   - **Headroom** — connection-pool / `max_connections` not near exhaustion.
+5. **No silent fallback** — confirm the system under test is not serving mock/cache/fallback data or rendering a valid-looking empty / degraded / null state that masks a dead dependency.
+
+Output the gate result before the Verification Plan:
+
+```markdown
+### [Environment Integrity Gate] (Tier A)
+- **Claim(s) gated:** <the empirical/live claims this substrate underpins>
+- **Substrate enumerated:** <processes / containers / services / data stores / endpoints in the evidence path>
+- **Liveness & no crash-loop:** <PASS/FAIL — evidence, e.g. restart counts stable across 2 samples>
+- **Readiness (answers a request):** <PASS/FAIL — probe result>
+- **Data-truth (fresh + non-empty + right store/schema):** <PASS/FAIL — measured value, e.g. newest row age, count, cluster status>
+- **No silent fallback/mock:** <PASS/FAIL>
+- **Verdict:** <PASS → proceed to Phase 4.1 | FAIL → block; claim = [Unverifiable — substrate down]>
+```
+
+Reference implementation: [`scripts/env-integrity-gate.sh`](../../scripts/env-integrity-gate.sh)
+detects crash-looping containers (RestartCount over threshold **or** climbing across two samples),
+runs optional readiness probes (`--probe URL`), and runs pluggable **data-truth assertions**
+(`--assert-cmd 'shell that must exit 0'`) — use the latter for freshness/non-empty SQL, doc-count,
+and cluster-health checks. It exits non-zero to fail CI/QA loudly.
+
+#### Phase 4.1: Golden-Path Slice Probe — Tier B: a user's request → rendered pixel (HARD GATE)
+Tier A proves each layer is *alive*; it does **not** prove the user-facing **vertical slice**
+(data store → API/agent → rendered browser pixel) is *correct*. Every per-layer check can be green
+while the slice is broken at a **seam** — DB↔API (wrong index/table, `200 []`), API↔UI (field/shape
+mismatch silently rendering the empty state), config/index mismatch, auth (root pings `200` while
+authed queries `403`), stale data, or a mock/fallback flag. This is exactly the incident that
+shipped green: a crash-looping backend rendered as a *valid-looking empty state* and unit tests +
+a shallow browser check passed.
+
+**Requirement:** for any user-facing empirical claim, run **one synthetic golden-path probe** that
+drives a REAL (headless) browser through the same URL/mode a user would, and asserts the user
+*actually sees correct live content*. This is a HARD gate with the same blocking semantics as 4.0.
+The probe MUST assert on a **specific known value**, never on `length > 0` alone — empty-vs-populated
+is the whole bug. Prefer a stable **seeded sentinel record** over live-volume data for determinism;
+use bounded retries/timeouts to absorb cold-start, and treat a timeout as **BLOCK, not pass**.
+
+The probe asserts (all must hold):
+1. In **live mode** (assert provenance — not mock/demo/fallback), the target view renders **≥ N real rows**, AND
+2. the **empty/null-state component is ABSENT** (the incident-killer pair — dead data can no longer masquerade as a valid empty view), AND
+3. a **known live/seeded value is visible** on screen (proves DB→API→UI truth, not just non-empty), AND
+4. **zero uncaught console / page errors**, AND
+5. **no failed network responses** (status ≥ 400) on the view's real API calls.
+
+```markdown
+### [Golden-Path Slice Probe] (Tier B)
+- **User journey:** <URL + mode the probe drove, as a user would>
+- **Real content rendered (≥N rows) AND empty-state absent:** <PASS/FAIL — counts>
+- **Known live value visible:** <PASS/FAIL — the value asserted>
+- **Live-mode provenance (no mock/fallback):** <PASS/FAIL>
+- **Zero console errors / no failed (≥400) API calls:** <PASS/FAIL>
+- **Verdict:** <PASS → slice verified user-visible | FAIL → block; claim = [Unverifiable — slice broken]>
+```
+
+Reference implementation: [`scripts/golden-path-probe.mjs`](../../scripts/golden-path-probe.mjs)
+(Playwright) encodes assertions 1–5, configurable by env (`URL`, `ROW_SELECTOR`, `EMPTY_SELECTOR`,
+`EXPECT_TEXT`, `API_URL_RE`, `LIVE_ASSERT`). Wire both tiers in as a preflight before any
+`live`/integration verification: Tier A short-circuits fast on a dead substrate; Tier B then proves
+a real user would see correct content. **A claim passes only when both gates pass.**
+
+#### Phase 4.2: Verification Plan
+Once the Tier A + Tier B gates PASS, when an Implementer subagent reports completion, before running verification, output the plan:
 
 ```markdown
 ### [Verification Plan]
@@ -127,7 +218,40 @@ When an Implementer subagent reports completion, before running verification, ou
 Pass the Verifier the implemented code and the original specification. Ask the Verifier to write independent tests. If the Verifier reports failures, route them back to the Implementer.
 For medium/high-risk changes, also pass the result to an Architecture Auditor subagent that did not implement the code.
 
-#### Phase 4.2: Devil's Advocate Review
+#### Phase 4.3: Multi-Domain QA Panel (independent specialist sign-off before "good to go")
+One reviewer sees one slice. A single generalist pass — even a rigorous one — systematically
+misses cross-domain defects: the DB reviewer catches stale data, the frontend reviewer catches the
+masked null-state, the identity reviewer catches the unrotated secret. **The orchestrator may not
+declare a change "good to go" on its own judgment alone when the change is non-trivial.** It must
+convene a panel of independent domain specialists and clear their verdicts first.
+
+**When the panel is required (risk-gated — don't waste a 3-expert panel on a typo):**
+- **HARD requirement** (≥ 2 domains, ≥ 3 for security/data changes) when: Risk Score ≥ 6, OR the change touches a **user-facing vertical slice**, a **security/auth/secrets** boundary, a **data store**, or a **public interface**.
+- **Recommended** (≥ 2 domains) for medium risk (score 3–5).
+- **Skippable** for low-risk trivial changes — but you must state one line justifying the skip.
+
+**Composition rules:**
+- Select specialists by the layers the change actually touches — map to the vertical slice + cross-cutting concerns (e.g. DB→Database Reliability, API→Backend Architect, UI→Frontend Developer, auth/secrets→Identity & Access + Code Reviewer, reliability→SRE).
+- **Every panelist is independent of the Implementer** (the double-blind rule). None may have written the code under review.
+- Give each panelist only its persona + the change + a **fixed return contract**: `Verdict ∈ {Happy, Happy-with-changes, Not-happy}`, up to 4 concrete checkable gaps, and the single **#1 most important fix**.
+
+**Pass condition — ALL must hold before "good to go":**
+1. **No unresolved `Not-happy`.** A Not-happy blocks delivery until fixed or the panelist upgrades.
+2. **Every panelist's #1 fix is resolved** — applied, or explicitly **deferred with a written rationale + owner** (never silently dropped).
+3. **Findings are independently verified by the orchestrator, not rubber-stamped.** A panel verdict is a **Reported Fact** until you reproduce its blocking findings yourself (this is the *Authority/System Substitution* guard — e.g. a panelist's "source is clean" claim must be re-grepped, and a real miss like a secret surviving in adjacent tracked docs must be confirmed before you trust *or* dismiss it).
+4. **You may not overrule a `Not-happy`** without countervailing evidence recorded in Fact Calibration.
+
+```markdown
+### [Multi-Domain QA Panel]
+- **Change under review:** <what + risk score + which slice/boundary it touches>
+- **Panel required?** <HARD / Recommended / Skipped — with one-line justification>
+| Specialist (domain) | Verdict | #1 fix | Resolution (applied / deferred+owner) | Orchestrator re-verified? |
+| :--- | :--- | :--- | :--- | :--- |
+| <e.g. Identity & Access> | <Happy-with-changes> | <rotate the leaked secret> | <deferred — owner: user> | <yes — re-grepped> |
+- **Panel verdict:** <CLEAR → eligible for "good to go" | BLOCKED → unresolved Not-happy / #1 fix>
+```
+
+#### Phase 4.4: Devil's Advocate Review
 Once verification succeeds, you must run the Devil's Advocate self-evaluation before delivering the final answer to the user:
 
 ```markdown
@@ -139,7 +263,9 @@ Once verification succeeds, you must run the Devil's Advocate self-evaluation be
 - **Analytical Mistakes Audit:**
   - *Precision Theater Check:* [Pass / Fail - ensure rounded/calibrated ranges are used instead of false precision]
   - *Correlation vs. Mechanism:* [Pass / Fail - verify causal claims have checked confounding variables]
-  - *Authority/System Substitution:* [Pass / Fail - verify output is tested, not just accepted because 'subagent said so']
+  - *Authority/System Substitution:* [Pass / Fail - verify output is tested, not just accepted because 'subagent said so'; every Multi-Domain QA Panel finding was independently re-verified, not rubber-stamped]
+  - *False-Green / Substrate Check:* [Pass / Fail - confirm the Environment Integrity Gate (Phase 4.0) passed, so no empirical claim rests on a dead dependency, silent fallback, or valid-looking null state]
+  - *Vertical-Slice Check:* [Pass / Fail - confirm the Golden-Path Slice Probe (Phase 4.1) proved a real browser renders correct live content DB→API→pixel; a user-facing claim that only cleared Tier A is a Hypothesis, not a Verified Fact]
 ```
 
 ### Phase 5: Delivery & the Inverted Pyramid
@@ -152,6 +278,9 @@ When delivering the final result to the user:
    - Can we point to the independent check for each load-bearing claim?
    - Are assumptions and reported facts clearly labeled with their if-wrong consequences?
    - Did we actively try to disconfirm/prove the solution wrong?
+   - Did every empirical/live claim clear the Environment Integrity Gate (Phase 4.0), or is it clearly labeled `[Unverifiable — substrate down]`?
+   - Did every user-facing claim clear the Golden-Path Slice Probe (Phase 4.1) in a real browser, or is it labeled `[Unverifiable — slice broken]` / downgraded to Hypothesis?
+   - For any non-trivial/high-risk change, did the Multi-Domain QA Panel (Phase 4.3) CLEAR — no unresolved `Not-happy`, every panelist's #1 fix resolved or deferred-with-rationale, and each blocking finding independently re-verified by the orchestrator?
    - If the user reads only the first paragraph, is the understanding correct and calibrated?
 
 ### 5.1 Architecture Acceptance Checklist (Mandatory for code changes)
