@@ -268,6 +268,28 @@ Once verification succeeds, you must run the Devil's Advocate self-evaluation be
   - *Vertical-Slice Check:* [Pass / Fail - confirm the Golden-Path Slice Probe (Phase 4.1) proved a real browser renders correct live content DB→API→pixel; a user-facing claim that only cleared Tier A is a Hypothesis, not a Verified Fact]
 ```
 
+#### Phase 4.5: API Documentation Review (Mandatory for every code change)
+After the Devil's Advocate review and **before delivery**, audit and update every API contract touched by the implementation. Doc drift is a silent bug — a correct implementation with stale docs ships a lie.
+
+**Trigger:** Any change to a public interface, endpoint schema, world-slice shape, prop signature, or config contract.
+
+**Procedure:**
+1. **Identify affected docs.** Ask the Implementer subagent: "What public interfaces, endpoints, or data schemas did this change touch?" List each one.
+2. **Cross-check docs against code.** Spawn a read-only **Doc Auditor** subagent with the changed files + the relevant doc files. Its sole question: "Is every claim in the doc still accurate?"
+3. **Update or flag.** If the Doc Auditor finds drift:
+   - If the doc is in-repo (README, OpenAPI spec, SKILL.md, wayfinder ticket, code comment): spawn a **Doc Updater** subagent to apply the minimal correction.
+   - If the doc is external (Confluence, Jira, Swagger Hub): record a `[State Tag] Doc drift: Reported Fact` and surface it explicitly in the delivery.
+4. **Sign off.** Confirm the doc reflects the current implementation before proceeding to Phase 5.
+
+```markdown
+### [API Doc Review]
+- **Interfaces changed:** <list every public function, endpoint, prop, or schema touched>
+- **Docs audited:** <file paths or URLs reviewed>
+- **Drift found:** <Yes / No — if Yes, list each discrepancy>
+- **Corrections applied:** <list doc edits made, or "none required">
+- **External doc flags:** <Jira/Confluence items that need manual update, or "none">
+```
+
 ### Phase 5: Delivery & the Inverted Pyramid
 When delivering the final result to the user:
 1. **Key Answer First:** The very first sentence must answer the user's primary request.
@@ -289,6 +311,13 @@ Before final delivery, the orchestrator must explicitly answer:
 2. Did core complexity move into a deep module rather than into call sites?
 3. Are seams explicit enough that tests can isolate behavior without fragile setup?
 4. Did any module boundary become ambiguous, and if so, was it corrected?
+
+### 5.2 API Documentation Acceptance Checklist (Mandatory for code changes)
+Before final delivery, the orchestrator must explicitly confirm:
+1. Was Phase 4.5 (API Doc Review) completed — were all affected interfaces listed?
+2. Does every doc (README, OpenAPI spec, SKILL.md, wayfinder map, inline comments) accurately reflect the shipped implementation?
+3. If doc drift was found, was it corrected before delivery (not deferred)?
+4. Are external doc flags (Confluence, Jira, Swagger Hub) surfaced to the user so they can act on them?
 
 ---
 
