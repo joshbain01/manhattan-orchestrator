@@ -292,9 +292,9 @@ Before final delivery, the orchestrator must explicitly answer:
 
 ---
 
-## 6. Engineering Division Sub-Agents
+## 6. Specialist Sub-Agents
 
-The Engineering Division is a roster of 55 pre-built specialist personas available as sub-agents. When a task requires deep domain expertise, **spawn an Engineering Sub-Agent instead of a generic `general-purpose` agent**.
+The Specialist roster is a collection of 70 pre-built domain expert personas available as sub-agents. When a task requires deep domain expertise, **spawn a Specialist Sub-Agent instead of a generic `general-purpose` agent**.
 
 ### 6.1 Three-Tier Delegation Model
 
@@ -327,7 +327,7 @@ To spawn an Engineering Sub-Agent, read its `.md` file and prepend it to the `ta
 
 ```python
 # In your task tool prompt, build it like this:
-persona = open('/home/jbain/.copilot/agents/engineering-{name}.md').read()
+persona = open(f'{Path.home()}/.copilot/agents/{division}-{name}.md').read()
 
 prompt = f"""
 {persona}
@@ -357,7 +357,7 @@ prompt = f"""
 agent_type: "general-purpose"
 name: "software-architect"
 prompt: f"""
-{open('/home/jbain/.copilot/agents/engineering-software-architect.md').read()}
+{open(str(Path.home() / '.copilot/agents/engineering-software-architect.md')).read()}
 
 ---
 
@@ -372,16 +372,18 @@ Return a structured Markdown document with the three deliverables above.
 
 ## Constraints
 
-- Spawn a Researcher sub-agent to explore /home/jbain/apps/sapphire/sapphire-pipeline/ first.
+- Spawn a Researcher sub-agent to explore the target codebase first.
 - Spawn an Architecture Auditor sub-agent to validate your interface for width before returning.
 """
 ```
 
 ---
 
-### 6.3 Selecting the Right Engineering Agent
+### 6.3 Selecting the Right Specialist Agent
 
 Match the task domain to the specialist. When in doubt, prefer a **narrower specialist** over a broad one.
+
+#### 🏗️ Engineering
 
 | When you need... | Use this agent | File |
 | :--- | :--- | :--- |
@@ -439,11 +441,38 @@ Match the task domain to the specialist. When in doubt, prefer a **narrower spec
 | CMS (WordPress / Drupal) dev | 🧱 CMS Developer | `engineering-cms-developer.md` |
 | OrgScript grammar and AST | 📜 OrgScript Engineer | `engineering-orgscript-engineer.md` |
 
-**All 55 agent files live at:** `/home/jbain/.copilot/agents/engineering-*.md`
+#### 🎨 Design & UX
+
+| When you need... | Use this agent | File |
+| :--- | :--- | :--- |
+| Brand identity, consistency, positioning | 🎨 Brand Guardian | `design-brand-guardian.md` |
+| AI image generation prompts | 📷 Image Prompt Engineer | `design-image-prompt-engineer.md` |
+| Culturally accurate, bias-free imagery | 🌈 Inclusive Visuals Specialist | `design-inclusive-visuals-specialist.md` |
+| Cognitive walkthroughs from user personas | 🎭 Persona Walkthrough Specialist | `design-persona-walkthrough.md` |
+| Visual design systems, component libraries | 🎨 UI Designer | `design-ui-designer.md` |
+| Pre-ship UI finish-gate critique | 🧱 UI Finish-Gate Reviewer | `design-ui-finish-gate-reviewer.md` |
+| CSS systems, dev-ready UX architecture | 📐 UX Architect | `design-ux-architect.md` |
+| Usability testing, user behavior analysis | 🔬 UX Researcher | `design-ux-researcher.md` |
+| Visual storytelling, multimedia narrative | 🎬 Visual Storyteller | `design-visual-storyteller.md` |
+| Brand delight, personality, whimsy | ✨ Whimsy Injector | `design-whimsy-injector.md` |
+
+#### 🧭 Product
+
+| When you need... | Use this agent | File |
+| :--- | :--- | :--- |
+| Behavioral psychology-driven UX nudges | 🧠 Behavioral Nudge Engine | `product-behavioral-nudge-engine.md` |
+| User feedback synthesis and prioritization | 🔍 Feedback Synthesizer | `product-feedback-synthesizer.md` |
+| Full product lifecycle ownership, roadmap | 🧭 Product Manager | `product-manager.md` |
+| Sprint planning, agile prioritization | 🎯 Sprint Prioritizer | `product-sprint-prioritizer.md` |
+| Market trends, competitive analysis | 🔭 Trend Researcher | `product-trend-researcher.md` |
+
+**Engineering agent files:** `~/.copilot/agents/engineering-*.md`
+**Design agent files:** `~/.copilot/agents/design-*.md`
+**Product agent files:** `~/.copilot/agents/product-*.md`
 
 ---
 
-### 6.4 Isolation Rules for Engineering Sub-Agents
+### 6.4 Isolation Rules for Specialist Sub-Agents
 
 1. **Give each engineering sub-agent only its persona + its task.** Never pass the full orchestrator context, full codebase description, or another agent's output unless directly required.
 2. **The engineering specialist owns Tier 2 decisions.** Don't micromanage its internal workflow — let the persona drive it.

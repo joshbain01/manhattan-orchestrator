@@ -47,10 +47,12 @@ fi
 
 # ── Install agent personas ─────────────────────────────────
 if $INSTALL_AGENTS; then
-  info "Installing 58 engineering agent personas → $AGENTS_DEST"
+  info "Installing engineering, design, and product agent personas → $AGENTS_DEST"
   mkdir -p "$AGENTS_DEST"
-  cp "$REPO_DIR/agents/"*.md "$AGENTS_DEST/"
-  AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md 2>/dev/null | wc -l)
+  cp "$REPO_DIR/agents/"*.md "$AGENTS_DEST/" 2>/dev/null || true
+  cp "$REPO_DIR/agents/design/"*.md "$AGENTS_DEST/" 2>/dev/null || true
+  cp "$REPO_DIR/agents/product/"*.md "$AGENTS_DEST/" 2>/dev/null || true
+  AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md "$AGENTS_DEST"/design-*.md "$AGENTS_DEST"/product-*.md 2>/dev/null | wc -l)
   success "$AGENT_COUNT agent persona files installed: $AGENTS_DEST"
 fi
 
