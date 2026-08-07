@@ -479,3 +479,207 @@ Match the task domain to the specialist. When in doubt, prefer a **narrower spec
 3. **Route verification to a different agent.** If a Backend Architect designs a module, spawn a Code Reviewer (not the Architect) to audit it.
 4. **One specialist per domain slice.** Don't spawn two overlapping specialists on the same task — decompose first, then assign one specialist per piece.
 5. **Worker sub-agents (Tier 3) must receive only their immediate task**, stripped of all orchestrator and specialist context they don't need.
+
+---
+
+## 7. Performance & Scalability Gate
+
+A formal, opt-in audit protocol that systematically surfaces browser-side render
+costs, memory leaks, and bundle bloat before they reach production. Invoke it any
+time an effort adds significant UI complexity, wires live data, or prepares for a
+production readiness review.
+
+**When to invoke:**
+- A PR is approaching merge and involves a React SPA, live data pipeline, or long-lived browser session
+- A user reports the app feels sluggish, memory grows over a shift, or the initial load is slow
+- The Wayfinder map's destination is production-readiness and no perf review has been run
+
+**When NOT to invoke:**
+- The change is purely backend (Python, database schema, infra config)
+- The change is a documentation or config-only update
+- A perf gate has already run within the current PR/effort cycle
+
+---
+
+### 7.1 Phase P1 — Baseline Measurement (always first, always AFK)
+
+Before spawning any domain agents, establish a quantitative baseline so findings
+are grounded in data, not speculation. Run this in the terminal:
+
+```bash
+# Process RSS and CPU at idle
+ps aux | grep "[v]ite\|[n]ode.*app" | awk '{printf "PID:%s RSS:%sMB CPU:%s%%\n", $2, $6/1024, $3}'
+
+# Top memory consumers on the machine
+ps aux --sort=-%mem | head -12 | awk 'NR>1 {printf "%-24s RSS:%sMB CPU:%s%%\n", $11, $6/1024, $3}'
+```
+
+Record the baseline in your output as `[State Tag] Vite RSS / CPU: [Verified Fact]`.
+If the server-side process is already lean (< 50 MB RSS, < 1% CPU at idle), the
+problem space is browser-side — proceed to Phase P2.
+
+---
+
+### 7.2 Phase P2 — Parallel Domain Audits (three simultaneous read-only subagents)
+
+Spawn exactly **three** parallel specialist subagents. Each operates independently
+with read-only access. Pass each only its own scope — never the full codebase or
+another agent's findings.
+
+#### Subagent A — React Render Analyst (Frontend Developer specialist)
+
+**Scope:** `src/` tree — components, pages, hooks, data providers
+
+**Mandate — audit for and report on:**
+1. **Context blast radius** — how many components subscribe to each context? Is state split (stable vs. volatile) or monolithic?
+2. **Tick/polling re-renders** — is there a clock/tick counter driving re-renders? How many components depend on it? What is the re-render rate/minute?
+3. **`useMemo` discipline** — are expensive derived arrays (device rows, chart series, entity maps) wrapped in `useMemo` with complete dep arrays?
+4. **`useCallback` on event handlers** — are callbacks passed to children recreated on every render (breaking `React.memo`)?
+5. **`React.memo` usage** — are list-item components and stable subtrees wrapped? Are any memoized components defeated by unstable prop objects?
+6. **Chart library props** — are inline `tick={{...}}` / `contentStyle={{...}}` / `domain={[...]}` literals recreated on every render?
+7. **Selector pattern** — do components subscribe to a full world object and derive their slice inline?
+
+**Output format:** One finding per section, each with Severity (Critical/High/Medium/Low), file path + line range, root cause, estimated renders/cycle impact, and recommended fix.
+
+#### Subagent B — Memory Leak Hunter (Code Reviewer specialist)
+
+**Scope:** `src/hooks/`, `src/data/`, `src/components/`, and all files matching `setInterval|addEventListener|IntersectionObserver|ResizeObserver|AbortController|WebSocket|EventSource`
+
+**Mandate — look for and report on:**
+- **Category A — Missing cleanup:** `setInterval` without `clearInterval`, `addEventListener` without `removeEventListener`, `Observer` instances without `.disconnect()`, `AbortController` signals never `.abort()`ed in `useEffect` cleanup
+- **Category B — Growing data structures:** state arrays that grow unboundedly (`setArr(prev => [...prev, new])`), `useRef` caches never pruned, `realOverlay`-style accumulations never evicted
+- **Category C — Stale closures:** `useEffect` / `setInterval` callbacks with incomplete dep arrays capturing large objects, keeping old render trees alive
+- **Category D — Browser global leaks:** `window`/`document` listeners attached on mount without cleanup on unmount
+
+**Output format:** One finding per section, each with Category (A/B/C/D), Severity, file path + line range, leak mechanism, growth rate (one-time / per-cycle / unbounded), and recommended fix with teardown code pattern.
+
+#### Subagent C — Bundle & Data Efficiency Analyst (Frontend Developer specialist)
+
+**Scope:** `vite.config.js`, `package.json`, `src/` import graph, live data fetch logic
+
+**Mandate — audit for and report on:**
+1. **Code splitting** — are heavy page/component modules loaded with `React.lazy()` + `Suspense`, or all eagerly imported?
+2. **Heavy library isolation** — are large deps (leaflet, recharts, heavy icon sets) isolated to the pages that use them, or pulled into the initial bundle via shared components?
+3. **Vite `build` config** — is there a `build` key with `rollupOptions.output.manualChunks`? Is there a `chunkSizeWarningLimit`? Is `optimizeDeps.include` set for heavy pre-bundling?
+4. **Live data polling cadence** — what interval is `/api/world` or equivalent fetched? Is it a full payload or incremental? Is there debounce/throttle on state updates?
+5. **Context `useMemo` deps** — does the data context value `useMemo` depend on too many independent values, triggering broad re-renders on any single change?
+
+**Output format:** One finding per section, each with Severity, file paths, current behavior, quantified performance impact (extra KB, renders/poll, etc.), and recommended fix.
+
+---
+
+### 7.3 Phase P3 — Independent Verification (Code Reviewer specialist, separate from subagents A/B/C)
+
+When all three audit reports arrive, extract the **top 8–10 highest-severity claims** across the three reports and pass them to a fresh Code Reviewer subagent that has NOT seen the other agents' work.
+
+**Verification prompt template:**
+
+```
+You are an independent code auditor. Specialist agents have produced findings about
+[app name]. Your job is to spot-check the top claims by reading the actual source
+files. Do NOT trust the specialists — verify each claim against the code.
+
+For each claim:
+- State CONFIRMED, REFUTED, or PARTIALLY TRUE
+- Show the exact code snippet that confirms or refutes it
+- If refuted: state what the code actually does
+
+Claims to verify:
+[paste top 8–10 claims with file paths]
+```
+
+The verifier must read the actual source files. Any claim it **refutes** is
+eliminated from the findings before delivery. This is the Double-Blind rule
+applied to performance analysis.
+
+Record results as:
+- `[State Tag] Claim N: [Verified Fact]` (confirmed)
+- `[State Tag] Claim N: [Verified Fact — ELIMINATED]` (refuted)
+
+---
+
+### 7.4 Phase P4 — Synthesis and Risk Ranking
+
+After verification, synthesize all confirmed/partially-true findings into a single
+ranked table using the standard Risk Matrix (U × I):
+
+```markdown
+| Tier | # | Finding | Files | Risk | Fix Summary |
+|:-----|:--|---------|-------|:----:|:------------|
+| Critical | C1 | ... | ... | 9 | ... |
+| High | H1 | ... | ... | 6 | ... |
+| Medium | M1 | ... | ... | 4 | ... |
+```
+
+**Tier definitions:**
+- **Critical:** Fix before any production deployment. Typically: no code splitting, no React.memo, missing build config.
+- **High:** Fix in the next sprint. Typically: independent poll intervals, unstable prop objects defeating memo, unaborted fetch closures.
+- **Medium:** Hygiene pass. Typically: dead tick subscriptions, listener cleanups, small dep array bugs, unbounded state arrays.
+- **Low / Correctness:** Single-line fixes, stale closure artifacts, eslint-suppress removals.
+
+Also call out explicitly: **"What is NOT a problem"** — findings the verification
+agent refuted, or areas where the baseline confirms the server-side process is lean.
+This prevents false urgency.
+
+---
+
+### 7.5 Phase P5 — Ticket Generation and Wayfinder Registration
+
+For each finding in the synthesis table:
+
+1. **Generate an implementation-ready ticket** using the ticket skill format:
+   ```
+   Title:
+   Problem:
+   Expected Behavior:
+   Implementation Requirements:
+   Acceptance Criteria:
+   Data Sources:
+   Do Not:
+   Notes for Coding Agent:
+   ```
+
+2. **Apply the implementation dependency order** — ticket chain constraints must be
+   explicit. The standard dependency chain for React SPA perf is:
+   ```
+   Build config → Lazy loading → Stable prop objects → React.memo → Context split
+   ```
+   All memory leak fixes and dep array fixes are **independent** and can be worked in parallel.
+
+3. **Register tickets to the active Wayfinder map** (if one exists for this effort).
+   Number tickets sequentially from the map's last ticket. Wire blocking edges
+   second pass (issues need IDs before they can reference each other).
+
+4. **State the frontier explicitly** — which tickets are unblocked and can be
+   picked up immediately, which are blocked and why.
+
+---
+
+### 7.6 Performance Gate Invocation Summary
+
+```
+invoke: /perf-gate or "run the perf gate on <app>"
+          │
+          ▼
+   Phase P1: Baseline (terminal — RSS/CPU snapshot)
+          │
+          ▼
+   Phase P2: Parallel audits (subagents A, B, C simultaneously)
+      A: React render analyst
+      B: Memory leak hunter
+      C: Bundle & data efficiency
+          │
+          ▼
+   Phase P3: Independent verifier (Code Reviewer, blind to A/B/C)
+      Eliminate refuted claims
+          │
+          ▼
+   Phase P4: Synthesis — risk-ranked table + "what is NOT a problem" section
+          │
+          ▼
+   Phase P5: Tickets → Wayfinder map → frontier declaration
+```
+
+**Gate output contract:** A risk-ranked findings table, a "not a problem" section,
+N implementation-ready tickets, and a clear frontier statement. The gate produces
+decisions and tickets — it does not implement fixes.
