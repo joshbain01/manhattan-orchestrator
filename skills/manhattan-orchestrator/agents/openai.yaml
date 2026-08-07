@@ -1,0 +1,4 @@
+interface:
+  display_name: "Manhattan Orchestrator"
+  short_description: "Rigorous, compartmentalized problem orchestration"
+  default_prompt: "Use the Manhattan Orchestrator to solve this rigorously:"

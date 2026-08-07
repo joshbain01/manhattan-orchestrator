@@ -73,8 +73,9 @@ bash install.sh
 ```
 
 This will:
-1. Copy `skills/manhattan-orchestrator/SKILL.md` → `~/.agents/skills/manhattan-orchestrator/SKILL.md` (with your `$HOME` path substituted in)
-2. Copy all 58 `agents/engineering-*.md` files → `~/.copilot/agents/`
+1. Copy the skill (`SKILL.md`, `OPENCLAW.md`, `SPARK.md`, `scripts/`) → `~/.agents/skills/manhattan-orchestrator/` (with your `$HOME` path substituted in)
+2. Copy all 70 `agents/{engineering,design,product}-*.md` files → `~/.copilot/agents/`
+3. Link the skill into every other installed CLI/TUI tool it can find — Claude Code, Gemini CLI, Pi, and Grok CLI each get a symlink back to the copy in step 1, and Codex (which only discovers skills under its own `~/.codex/skills`, never `~/.agents/skills`) gets its own native copy plus a `/manhattan-orchestrator` prompt shortcut. Any tool that isn't installed on the machine is skipped silently; anything already occupying a destination that isn't the correct symlink is left untouched with a warning. Pass `--no-cli-links` to skip this step entirely.
 
 ### Configure VS Code
 
