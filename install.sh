@@ -7,6 +7,9 @@
 #    bash install.sh                      # install everything
 #    bash install.sh --skill-only         # install skill only (skip agent personas)
 #    bash install.sh --agents-only        # install agent personas only (skip skill)
+#    bash install.sh --no-cli-links       # skip wiring the skill into other
+#                                          # installed CLI/TUI tools (Claude Code,
+#                                          # Gemini CLI, Pi, Grok CLI, Codex) below
 #    bash install.sh --openclaw           # also wire up OpenClaw sub-agent config
 #                                          # (combinable with the flags above;
 #                                          #  opt-in only — omitting it changes
@@ -15,18 +18,27 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILLS_SRC_DIR="$REPO_DIR/skills/manhattan-orchestrator"
 SKILLS_DEST="$HOME/.agents/skills/manhattan-orchestrator"
 AGENTS_DEST="$HOME/.copilot/agents"
+CLAUDE_SKILL_DEST="$HOME/.claude/skills/manhattan-orchestrator"
+GEMINI_SKILL_DEST="$HOME/.gemini/config/skills/manhattan-orchestrator"
+PI_SKILL_DEST="$HOME/.pi/agent/skills/manhattan-orchestrator"
+GROK_SKILL_DEST="$HOME/.grok/skills/manhattan-orchestrator"
+CODEX_SKILL_DEST="$HOME/.codex/skills/manhattan-orchestrator"
+CODEX_PROMPT_DEST="$HOME/.codex/prompts/manhattan-orchestrator.md"
 INSTALL_SKILL=true
 INSTALL_AGENTS=true
+INSTALL_CLI_LINKS=true
 INSTALL_OPENCLAW=false
 
 # ── Argument parsing ──────────────────────────────────────
 for arg in "$@"; do
   case $arg in
-    --skill-only)  INSTALL_AGENTS=false ;;
-    --agents-only) INSTALL_SKILL=false ;;
-    --openclaw)    INSTALL_OPENCLAW=true ;;
+    --skill-only)   INSTALL_AGENTS=false ;;
+    --agents-only)  INSTALL_SKILL=false ;;
+    --no-cli-links) INSTALL_CLI_LINKS=false ;;
+    --openclaw)     INSTALL_OPENCLAW=true ;;
   esac
 done
 
@@ -36,12 +48,25 @@ success() { echo -e "\033[0;32m[OK]\033[0m    $*"; }
 warn()    { echo -e "\033[0;33m[WARN]\033[0m  $*"; }
 
 # ── Install skill ─────────────────────────────────────────
+# Installs the full skill directory, not just SKILL.md: SKILL.md itself
+# links to OPENCLAW.md/SPARK.md and to scripts/env-integrity-gate.sh and
+# scripts/golden-path-probe.mjs as the Phase 4 gates' reference
+# implementations, so a skill install missing those left the agent unable
+# to actually run what its own SKILL.md told it to run.
+install_skill_files() {
+  local dest_dir="$1"
+  mkdir -p "$dest_dir/scripts"
+  sed "s|/home/jbain/|$HOME/|g" \
+    "$SKILLS_SRC_DIR/SKILL.md" \
+    > "$dest_dir/SKILL.md"
+  cp "$SKILLS_SRC_DIR/OPENCLAW.md" "$dest_dir/OPENCLAW.md" 2>/dev/null || true
+  cp "$SKILLS_SRC_DIR/SPARK.md" "$dest_dir/SPARK.md" 2>/dev/null || true
+  cp "$REPO_DIR/scripts/"* "$dest_dir/scripts/" 2>/dev/null || true
+}
+
 if $INSTALL_SKILL; then
   info "Installing skill → $SKILLS_DEST"
-  mkdir -p "$SKILLS_DEST"
-  sed "s|/home/jbain/|$HOME/|g" \
-    "$REPO_DIR/skills/manhattan-orchestrator/SKILL.md" \
-    > "$SKILLS_DEST/SKILL.md"
+  install_skill_files "$SKILLS_DEST"
   success "Skill installed: $SKILLS_DEST/SKILL.md"
 fi
 
@@ -54,6 +79,91 @@ if $INSTALL_AGENTS; then
   cp "$REPO_DIR/agents/product/"*.md "$AGENTS_DEST/" 2>/dev/null || true
   AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md "$AGENTS_DEST"/design-*.md "$AGENTS_DEST"/product-*.md 2>/dev/null | wc -l)
   success "$AGENT_COUNT agent persona files installed: $AGENTS_DEST"
+fi
+
+# ── Wire the skill into other installed CLI/TUI tools ──────
+# Claude Code, Gemini CLI, and Pi all discover skills the same way as the
+# canonical $SKILLS_DEST location above (a directory containing SKILL.md),
+# so once that copy is refreshed, each of these tools only needs a symlink
+# pointing at it. That keeps there being exactly ONE physical copy to keep
+# current — every downstream tool just follows the link — instead of N
+# copies quietly drifting out of sync every time this script updates
+# $SKILLS_DEST but nothing re-propagates the change further.
+#
+# Every entry below is a no-op (not even a warning) if that tool isn't
+# installed on this machine (its own top-level config directory is
+# absent), and is left completely alone with a warning if the destination
+# is already occupied by something that isn't the correct symlink — this
+# step must never overwrite a user's existing file or directory there.
+link_skill_into() {
+  local label="$1" tool_marker_dir="$2" dest="$3"
+  if [ ! -d "$tool_marker_dir" ]; then
+    return 0
+  fi
+  if [ -L "$dest" ]; then
+    if [ "$(readlink -f "$dest")" = "$(readlink -f "$SKILLS_DEST")" ]; then
+      success "$label already linked → $dest"
+    else
+      warn "$label skill path is a symlink to something else — leaving it as-is: $dest"
+    fi
+    return 0
+  fi
+  if [ -e "$dest" ]; then
+    warn "$label skill path already exists and isn't a symlink to $SKILLS_DEST — leaving it as-is: $dest"
+    return 0
+  fi
+  mkdir -p "$(dirname "$dest")"
+  ln -s "$SKILLS_DEST" "$dest"
+  success "$label skill linked → $dest"
+}
+
+# Codex is the one exception: it never reads ~/.agents/skills at all, only
+# $CODEX_HOME/skills (its own native skill convention, confirmed by how its
+# own bundled skills — e.g. skill-installer — are laid out). So Codex gets
+# a real second copy here rather than a symlink, including the
+# Codex-specific agents/openai.yaml metadata sidecar that its skill loader
+# expects alongside SKILL.md.
+install_codex_skill() {
+  if [ ! -d "$HOME/.codex" ]; then
+    return 0
+  fi
+  info "Installing skill → $CODEX_SKILL_DEST (Codex's own skill convention)"
+  mkdir -p "$CODEX_SKILL_DEST/agents"
+  install_skill_files "$CODEX_SKILL_DEST"
+  cp "$SKILLS_SRC_DIR/agents/openai.yaml" "$CODEX_SKILL_DEST/agents/openai.yaml" 2>/dev/null || true
+  success "Codex skill installed: $CODEX_SKILL_DEST/SKILL.md"
+
+  # Codex's /manhattan-orchestrator custom-prompt shortcut. Codex prompt
+  # files only support the literal $ARGUMENTS substitution — there is no
+  # variable for "inline another skill's content" — so this must name the
+  # skill in plain text and let Codex's own skill-loader pick it up by
+  # name. An earlier hand-authored version of this file referenced
+  # "$manhattan-orchestrator" as if it were a variable; it isn't one, so
+  # that shortcut silently sent inert placeholder text instead of ever
+  # engaging the skill. Always regenerated here (fully owned by this
+  # script, same as SKILL.md above) so that mistake can't reappear.
+  mkdir -p "$(dirname "$CODEX_PROMPT_DEST")"
+  cat > "$CODEX_PROMPT_DEST" <<'PROMPT_EOF'
+---
+description: Solve a complex or high-stakes task with the Manhattan Orchestrator workflow
+argument-hint: Describe the problem or goal.
+---
+
+Use the manhattan-orchestrator skill to solve this rigorously.
+
+User request:
+$ARGUMENTS
+PROMPT_EOF
+  success "Codex prompt shortcut installed: $CODEX_PROMPT_DEST"
+}
+
+if $INSTALL_SKILL && $INSTALL_CLI_LINKS; then
+  info "Linking skill into other installed CLI/TUI tools…"
+  link_skill_into "Claude Code" "$HOME/.claude" "$CLAUDE_SKILL_DEST"
+  link_skill_into "Gemini CLI"  "$HOME/.gemini" "$GEMINI_SKILL_DEST"
+  link_skill_into "Pi"          "$HOME/.pi"     "$PI_SKILL_DEST"
+  link_skill_into "Grok CLI"    "$HOME/.grok"   "$GROK_SKILL_DEST"
+  install_codex_skill
 fi
 
 # ── OpenClaw wiring ────────────────────────────────────────
