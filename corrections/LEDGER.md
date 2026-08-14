@@ -28,3 +28,24 @@ evidence:
   occurrence_count: 1
 confidence: 0.9
 ```
+
+### CORR-2026-08-14-003
+```yaml
+id: CORR-2026-08-14-003
+status: promoted
+trigger:
+  phase: "Phase 5.4: Ticket-Driven Git Workflow"
+  task_type: "git history-rewriting action performed without confirmation"
+agent_behavior: "Ran 'git reset --hard' on a branch to reconcile it with an upstream change, then 'git push --force-with-lease' to update the remote branch, without asking the human first -- despite this being explicitly listed as an action requiring confirmation."
+human_correction: "dont force push!"
+durable_rule: "Never run 'git push --force'/--force-with-lease or 'git reset --hard' without first asking the human and getting an explicit go-ahead -- regardless of whether the branch appears to be solely the orchestrator's own work-in-progress. If reconciling a branch with an upstream change requires a force-push or hard reset, stop and ask; propose a non-destructive alternative (e.g. a merge commit, or a fresh branch) when one exists."
+applies_when:
+  - "A branch needs to be reset or force-pushed to reconcile with new upstream commits"
+  - "The orchestrator created the branch itself earlier in the same session"
+exceptions:
+  - "The human has explicitly pre-authorized force-push/reset for this specific branch in this session"
+evidence:
+  session_id: "4b1b16ec-f9fd-4e99-8de7-672afca9f3dc"
+  occurrence_count: 1
+confidence: 1.0
+```
