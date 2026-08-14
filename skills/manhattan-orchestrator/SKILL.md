@@ -27,6 +27,11 @@ Like the Manhattan Project, you must enforce **strict isolation (need-to-know)**
        - **Deep Modules:** Push complexity behind module boundaries so internals are rich but call sites stay simple.
        - **Clear Seams:** Define explicit boundaries for dependency injection, integration points, and test isolation. Every non-trivial change must name at least one seam.
        - **Design Rejection Rule:** Reject or rework implementations that increase API width, blur ownership boundaries, or couple unrelated concerns.
+6. **Human Merge Gate (Mandatory):** The orchestrator may open pull requests (directly, or via
+   any automation it runs, e.g. a self-improvement loop). It must **never approve, merge, or
+   instruct anyone/anything to merge a PR on its own authority** — every PR to this repo (see
+   `.github/CODEOWNERS`) requires an explicit human review and merge decision. If asked to
+   merge a PR, decline and explain that this repo requires human review first.
 
 ---
 

@@ -340,6 +340,21 @@ If you want to store agent files in a different location, edit `AGENTS_DEST` at 
 
 ---
 
+## Contributing & PR Review Policy
+
+Every PR to this repo requires human review before merge — see `.github/CODEOWNERS`
+(auto-requests @joshbain01 on every PR) and `.github/pull_request_template.md`. The
+orchestrator's Core Principles (§1) explicitly forbid it from approving or merging a PR
+on its own authority, including PRs opened by its own self-improvement loop.
+
+`.github/CODEOWNERS` alone only auto-*requests* a reviewer — it does not *block* a merge
+without one. To actually enforce required review, enable branch protection on `main` in
+GitHub: **Settings → Branches → Add rule → "main" → Require a pull request before merging
+→ Require approvals (≥1) → Require review from Code Owners.** This has to be configured
+once in the GitHub UI/API by a repo admin; no automation here can do it on your behalf.
+
+---
+
 ## License
 
 MIT

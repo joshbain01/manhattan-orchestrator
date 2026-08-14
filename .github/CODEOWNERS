@@ -1,0 +1,17 @@
+# Every file in this repo requires review from @joshbain01 before merging.
+#
+# This alone only makes GitHub auto-request @joshbain01 as a reviewer on every
+# PR — it does NOT block merging without an approval. To make review actually
+# *required* (not just requested), enable branch protection on `main`:
+#
+#   Settings → Branches → Add branch protection rule → branch name pattern "main"
+#     [x] Require a pull request before merging
+#         [x] Require approvals (at least 1)
+#         [x] Require review from Code Owners
+#     [x] Do not allow bypassing the above settings (so even an admin/owner
+#         push can't skip review — remove this if you want yourself exempt)
+#
+# Any automation in this repo that opens PRs (e.g. a self-improvement/agentic
+# loop) must never approve or merge its own PRs — only a human review counts.
+
+* @joshbain01
