@@ -354,7 +354,7 @@ Before final delivery, the orchestrator must explicitly confirm:
 | Stage | `git add <each changed file>` explicitly — never `-A`/`.`, never a file you didn't author |
 | Commit | One detailed message: what changed and why |
 | Push | `git push -u origin <branch>` — never push to `main` |
-| PR | Draft body: Reason for the change / What was done / How to review / Tests performed |
+| PR | Draft body: `## Description` (1-line summary + ticket link) → categorized `###` sections with emoji (🆕 New / 🐛 Fix / 🎨 Style / 📄 Docs / 🧪 Tests-fixed, as applicable) → files-changed table (`\| Area \| What changed \|`) → `### ✅ Tests` → `### ⚠️ Pre-existing failures — unrelated` (if any) → `### 📌 Scope notes` |
 | Ticket | Comment with a summary + PR link, then transition it to Review |
 
 ---

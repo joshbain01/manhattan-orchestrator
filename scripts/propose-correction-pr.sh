@@ -291,32 +291,39 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   PLACEMENT_DESC="${TARGET_FILE_REL}"
   [[ -n "$ANCHOR" ]] && PLACEMENT_DESC="${PLACEMENT_DESC} (after: \"${ANCHOR}\")"
   PR_BODY="$(cat <<PRBODY
-## Reason for this change
+## Description
+
 ${HUMAN_CORRECTION}
 
-## What was done
+---
+
+### 🔧 Learned Constraint: ${TITLE}
+
 - Agent behavior being corrected: ${AGENT_BEHAVIOR}
-- Durable rule (status: ${STATUS}): ${RULE}
-- Ledger entry: \`corrections/LEDGER.md\` § ${ID}
-- Skill-file placement: ${PLACEMENT_DESC}
+- Durable rule (status: **${STATUS}**): ${RULE}
 
-## How to review
-1. Read the ledger entry (\`corrections/LEDGER.md\` § ${ID}) for full correction context (trigger phase: ${TRIGGER_PHASE:-unspecified}; task type: ${TASK_TYPE:-unspecified}).
-2. Confirm the patch in ${TARGET_FILE_REL} reads as a targeted, concise addition in the surrounding section's existing tone — not a bottom-of-file paragraph.
-3. Re-score against \`.github/CHANGE_RUBRIC.md\` independently before approving (per the double-blind rule — author's self-score is not sufficient).
+| Area | What changed |
+|---|---|
+| \`corrections/LEDGER.md\` | Appended § ${ID} entry (trigger phase: ${TRIGGER_PHASE:-unspecified}; task type: ${TASK_TYPE:-unspecified}) |
+| \`${TARGET_FILE_REL}\` | Targeted patch${ANCHOR:+ inserted after: \"${ANCHOR}\"} |
 
-## Tests performed
+### ✅ Tests
+
 ${TESTS_PERFORMED:-Self-scored against .github/CHANGE_RUBRIC.md before proposing (see ledger entry); this is a documentation/skill-instruction change with no executable test suite.}
 
-Session: ${SESSION_ID:-unknown}
+### 📌 Scope notes
+
+- Placement check: confirm the patch in \`${TARGET_FILE_REL}\` reads as a targeted, concise addition in the surrounding section's existing tone — not a bottom-of-file paragraph.
+- Re-score against \`.github/CHANGE_RUBRIC.md\` independently before approving (per the double-blind rule — author's self-score is not sufficient).
+- Session: ${SESSION_ID:-unknown}
 PRBODY
 )"
-  if PR_URL="$(gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
-    --title "self-improve(${ID}): ${TITLE}" \
-    --body "$PR_BODY" 2>"$SCRATCH_ROOT/gh-err.log")"; then
+  if PR_URL="$(gh api "repos/${SLUG}/pulls" \
+    -f title="self-improve(${ID}): ${TITLE}" -f head="$BRANCH" -f base="$BASE_BRANCH" -f body="$PR_BODY" \
+    --jq '.html_url' 2>"$SCRATCH_ROOT/gh-err.log")"; then
     success "Opened PR: $PR_URL"
   else
-    warn "gh pr create failed — the branch was already pushed. Open the PR manually:"
+    warn "gh api pull-create failed — the branch was already pushed. Open the PR manually:"
     echo "$COMPARE_URL"
     cat "$SCRATCH_ROOT/gh-err.log" >&2 || true
   fi
@@ -324,3 +331,4 @@ else
   warn "gh CLI not available/authenticated — open the PR manually:"
   echo "$COMPARE_URL"
 fi
+
