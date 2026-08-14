@@ -49,6 +49,13 @@ confidence: <0.0-1.0>
   the second occurrence.
 - **Superseding** — if a new rule contradicts an existing promoted rule, the new PR must
   mark the old rule superseded (strike it, don't silently leave both), citing the old `id`.
+- **Anti-bloat gate (hard requirement):** promotion is not automatic just because a
+  correction recurred or used generalizing language — it must also clear
+  `../.github/CHANGE_RUBRIC.md` (score ≥ 8/12, `Validated Value` never 0). A candidate that
+  can't cite a specific, real failure it would have prevented stays a `candidate` forever.
+  Every 3rd+ promoted rule in a rolling 90 days must also consolidate/prune an existing one.
+  This exists precisely so the loop that's supposed to reduce babysitting doesn't become the
+  thing that slowly bloats the orchestrator into something nobody reads end-to-end anymore.
 
 ## How a correction becomes a PR
 

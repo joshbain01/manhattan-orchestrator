@@ -558,6 +558,16 @@ confidence: <0.0-1.0>
 - Promoting appends/updates a bullet under SKILL.md's own `## Learned Constraints
   (self-improvement loop)` section (below), keyed by `id` so re-promotion updates the
   existing bullet instead of duplicating it.
+- **Anti-bloat gate (mandatory, no exceptions):** before running `--status promote`, self-score
+  the rule against `.github/CHANGE_RUBRIC.md`. If `Validated Value = 0` (no specific, cited
+  failure this would have prevented), it does **not** get promoted — leave it as `candidate`
+  indefinitely rather than promoting "just in case." Include the rubric scores in the PR body
+  the script prints/opens. This is what stops the self-improvement loop from being the
+  mechanism that quietly bloats the orchestrator it's supposed to be protecting.
+- **Consolidation duty:** if this is the 3rd+ rule promoted under `Learned Constraints` in a
+  rolling 90-day window, the same PR must also merge, tighten, or demote at least one existing
+  rule (see `.github/CHANGE_RUBRIC.md` § Consolidation duty) — growth without pruning is a
+  rubric failure, not a free pass.
 
 ### 7.4 Invocation
 ```
