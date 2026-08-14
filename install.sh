@@ -42,7 +42,13 @@ if $INSTALL_SKILL; then
   sed "s|/home/jbain/|$HOME/|g" \
     "$REPO_DIR/skills/manhattan-orchestrator/SKILL.md" \
     > "$SKILLS_DEST/SKILL.md"
-  success "Skill installed: $SKILLS_DEST/SKILL.md"
+  # SKILL.md points to these as on-demand reference files (§ 6.3, § 7, § 8) —
+  # they must ship alongside it or those pointers 404 once installed.
+  for ref in SPECIALISTS.md SELF_IMPROVEMENT.md LEARNED_CONSTRAINTS.md PERF_GATE.md OPENCLAW.md SPARK.md; do
+    [ -f "$REPO_DIR/skills/manhattan-orchestrator/$ref" ] && \
+      cp "$REPO_DIR/skills/manhattan-orchestrator/$ref" "$SKILLS_DEST/$ref"
+  done
+  success "Skill installed: $SKILLS_DEST/SKILL.md (+ reference files)"
 fi
 
 # ── Install agent personas + orchestrator custom agent ─────

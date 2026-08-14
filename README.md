@@ -40,7 +40,11 @@ manhattan-orchestrator/
 ├── install.sh                                   ← one-command installer
 ├── skills/
 │   └── manhattan-orchestrator/
-│       ├── SKILL.md                             ← the orchestrator skill
+│       ├── SKILL.md                             ← the orchestrator skill (core, lean)
+│       ├── SPECIALISTS.md                       ← full 70-agent lookup table (§ 6.3 reference)
+│       ├── SELF_IMPROVEMENT.md                  ← self-improvement loop mechanics (§ 7 reference)
+│       ├── LEARNED_CONSTRAINTS.md               ← promoted correction rules (fallback home)
+│       ├── PERF_GATE.md                         ← Performance & Scalability Gate (§ 8 reference)
 │       ├── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
 │       └── SPARK.md                             ← unvalidated LAN inference (Spark/vLLM/llama.cpp) recipe
 └── agents/
