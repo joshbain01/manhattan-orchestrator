@@ -354,6 +354,7 @@ Before final delivery, the orchestrator must explicitly confirm:
 | Stage | `git add <each changed file>` explicitly — never `-A`/`.`, never a file you didn't author |
 | Commit | One detailed message: what changed and why |
 | Push | `git push -u origin <branch>` — never push to `main` |
+| Force-push / hard-reset | Never run `git push --force`/`--force-with-lease` or `git reset --hard` without asking the human first and getting an explicit go-ahead — even on a branch only you created this session. |
 | PR | Draft body: `## Description` (1-line summary + ticket link) → categorized `###` sections with emoji (🆕 New / 🐛 Fix / 🎨 Style / 📄 Docs / 🧪 Tests-fixed, as applicable) → files-changed table (`\| Area \| What changed \|`) → `### ✅ Tests` → `### ⚠️ Pre-existing failures — unrelated` (if any) → `### 📌 Scope notes` |
 | Ticket | Comment with a summary + PR link, then transition it to Review |
 
