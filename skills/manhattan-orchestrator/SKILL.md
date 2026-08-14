@@ -316,7 +316,7 @@ Before final delivery, the orchestrator must explicitly answer:
 Before final delivery, the orchestrator must explicitly confirm:
 1. Was Phase 4.5 (API Doc Review) completed — were all affected interfaces listed?
 2. Does every doc (README, OpenAPI spec, SKILL.md, wayfinder map, inline comments) accurately reflect the shipped implementation?
-3. If doc drift was found, was it corrected before delivery (not deferred)?
+3. If doc drift was found, was in-repo drift corrected before delivery (and external drift flagged/surfaced, not deferred)?
 4. Are external doc flags (Confluence, Jira, Swagger Hub) surfaced to the user so they can act on them?
 
 ---
