@@ -29,6 +29,28 @@ evidence:
 confidence: 0.9
 ```
 
+### CORR-2026-08-14-002
+```yaml
+id: CORR-2026-08-14-002
+status: promoted
+trigger:
+  phase: "Phase 3: Delegate / Phase 5: Delivery"
+  task_type: "ticket-driven implementation git/PR/Jira workflow"
+agent_behavior: "Began implementing SAP-3564 directly in the working tree on main without first creating a dedicated feature branch, and had no defined end-of-session workflow for staging only authored files, committing, pushing, opening a PR, and updating the originating Jira ticket."
+human_correction: "The manhattan-orchestrator should always create a fresh branch from main using the Jira ticket name, e.g. git checkout -b SAP-3564-sapphire-users-can-investigate-alerts-without-leaving-the-alerts-page. It should also ensure the local environment is a clean copy from main before it gets to work locally. When it is completely done, and the human has agreed to the code changes, it should then run make test, and only make corrections to code that it authored during the branch. It should do a git add with only the files it changed (never add code we didn't write). It should commit code that we wrote in this branch with a detailed commit message. It should then push the branch to remote (never commit to main directly). It should draft a detailed PR body that describes the reason for the code change, what was done, how to review it, and the tests that were done. It should then write a comment in the Jira ticket and move the ticket to review."
+durable_rule: "For any ticket-driven implementation task: (1) Before starting work, verify the local repo is on a clean, up-to-date main (or bring it there), then create a new branch named <TICKET-KEY>-<slugified-summary> off main. (2) Do all implementation work on that branch. (3) Only after the human has explicitly agreed to the code changes: run the project's test command (e.g. make test); do not fix pre-existing failures unrelated to the branch's own changes -- only correct issues in code authored on this branch; stage only the files the branch actually changed (never git add -A / . blindly, never include unrelated auto-modified files like tool-baseline drift); commit with a detailed message describing what changed and why; push the branch to origin (never commit or push directly to main); draft a detailed PR body covering the reason for the change, what was done, how to review it, and what tests were run; then post a comment on the originating Jira ticket summarizing the change and PR link, and transition the ticket to Review."
+applies_when:
+  - "The task originates from a tracked ticket (Jira or similar) in a git repository"
+  - "Implementation work is about to begin, or has already begun, directly on main or a shared branch"
+  - "The human has explicitly agreed the code changes are ready to finalize"
+exceptions:
+  - "The repository already documents a different branching/PR convention -- defer to it"
+  - "The human explicitly asks for a different workflow (e.g. work directly on an existing branch)"
+evidence:
+  session_id: "4b1b16ec-f9fd-4e99-8de7-672afca9f3dc"
+  occurrence_count: 1
+confidence: 0.95
+
 ### CORR-2026-08-14-003
 ```yaml
 id: CORR-2026-08-14-003
