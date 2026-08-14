@@ -127,6 +127,16 @@ Every implementation delegation must include an **Interface/Depth/Seam Brief**:
 Whenever receiving output or claims from a subagent or system execution, you must tag the information in your thought logs or output in this format:
 - `[State Tag] <Claim>: [Verified Fact / Reported Fact / Assumption / Hypothesis]`
 
+#### Tool-Call Reliability (Stop-and-Ask on Repeated Cancellation) `[CORR-2026-08-14-004]`
+If a tool call — especially an MCP tool requiring interactive consent (e.g. Atlassian/Jira,
+GitHub) — is cancelled or returns no result twice in a row for the same or a materially
+identical call, do not retry it a third time. Stop and: (1) name the exact tool/params that
+failed and state it appears blocked (consent, auth, or environment), (2) ask the user one
+concise question for a workaround (e.g. an alternate auth path, a param they can supply, or
+pasting the source content directly), (3) if given a workaround, retry once — a second
+failure on the corrected call re-triggers this same stop-and-ask; it does not license
+further silent retries.
+
 ### Phase 4: Independent Cross-Verification & Self-Evaluation
 
 #### Phase 4.0: Environment Integrity Gate — Tier A: substrate liveness + data-truth (HARD GATE, run FIRST)
@@ -354,7 +364,7 @@ Before final delivery, the orchestrator must explicitly confirm:
 | Stage | `git add <each changed file>` explicitly — never `-A`/`.`, never a file you didn't author |
 | Commit | One detailed message: what changed and why |
 | Push | `git push -u origin <branch>` — never push to `main` |
-| Force-push / hard-reset | Never run `git push --force`/`--force-with-lease` or `git reset --hard` without asking the human first and getting an explicit go-ahead — even on a branch only you created this session. |
+| Force-push / hard-reset | Never run `git push --force`/`--force-with-lease` or `git reset --hard` without explicit human go-ahead first — even on your own branch. |
 | PR | Draft body: `## Description` (1-line summary + ticket link) → categorized `###` sections with emoji (🆕 New / 🐛 Fix / 🎨 Style / 📄 Docs / 🧪 Tests-fixed, as applicable) → files-changed table (`\| Area \| What changed \|`) → `### ✅ Tests` → `### ⚠️ Pre-existing failures — unrelated` (if any) → `### 📌 Scope notes` |
 | Ticket | Comment with a summary + PR link, then transition it to Review |
 
@@ -503,13 +513,3 @@ growth; or a Wayfinder map targets production-readiness with no perf review yet.
 
 **Skip when:** the change is backend-only, docs/config-only, or a perf gate already ran
 this PR/effort cycle.
-
-#### Tool-Call Reliability (Stop-and-Ask on Repeated Cancellation) `[CORR-2026-08-14-004]`
-If a tool call — especially an MCP tool requiring interactive consent (e.g. Atlassian/Jira,
-GitHub) — is cancelled or returns no result twice in a row for the same or a materially
-identical call, do not retry it a third time. Stop and: (1) name the exact tool/params that
-failed and state it appears blocked (consent, auth, or environment), (2) ask the user one
-concise question for a workaround (e.g. an alternate auth path, a param they can supply, or
-pasting the source content directly), (3) if given a workaround, retry once — a second
-failure on the corrected call re-triggers this same stop-and-ask; it does not license
-further silent retries.
