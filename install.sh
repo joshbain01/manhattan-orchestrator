@@ -47,23 +47,13 @@ fi
 
 # ── Install agent personas + orchestrator custom agent ─────
 if $INSTALL_AGENTS; then
-  info "Installing engineering agent personas + orchestrator agent → $AGENTS_DEST"
+  info "Installing engineering, design, and product agent personas → $AGENTS_DEST"
   mkdir -p "$AGENTS_DEST"
-  cp "$REPO_DIR/agents/"*.md "$AGENTS_DEST/"
-  AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md 2>/dev/null | wc -l)
-  success "$AGENT_COUNT engineering persona files installed: $AGENTS_DEST"
-  # The Manhattan Orchestrator custom agent is what surfaces in the VS Code
-  # Agent-mode dropdown (prompt-file/skill slash commands do NOT reliably
-  # appear there). It MUST be a plain `.md` file (not `.agent.md`) so it loads
-  # via the same Copilot CLI agent bridge as the engineering personas; a
-  # `.agent.md` name routes it through VS Code's native loader, which does not
-  # reliably re-scan on remote reconnect and makes the agent vanish. cp above
-  # already copied it; confirm it landed.
-  if [ -f "$AGENTS_DEST/manhattan-orchestrator.md" ]; then
-    success "Manhattan Orchestrator custom agent installed → $AGENTS_DEST/manhattan-orchestrator.md"
-  else
-    warn "Expected orchestrator agent not found at $AGENTS_DEST/manhattan-orchestrator.md"
-  fi
+  cp "$REPO_DIR/agents/"*.md "$AGENTS_DEST/" 2>/dev/null || true
+  cp "$REPO_DIR/agents/design/"*.md "$AGENTS_DEST/" 2>/dev/null || true
+  cp "$REPO_DIR/agents/product/"*.md "$AGENTS_DEST/" 2>/dev/null || true
+  AGENT_COUNT=$(ls "$AGENTS_DEST"/engineering-*.md "$AGENTS_DEST"/design-*.md "$AGENTS_DEST"/product-*.md 2>/dev/null | wc -l)
+  success "$AGENT_COUNT agent persona files installed: $AGENTS_DEST"
 fi
 
 # ── OpenClaw wiring ────────────────────────────────────────
