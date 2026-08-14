@@ -40,7 +40,11 @@ manhattan-orchestrator/
 ├── install.sh                                   ← one-command installer
 ├── skills/
 │   └── manhattan-orchestrator/
-│       ├── SKILL.md                             ← the orchestrator skill
+│       ├── SKILL.md                             ← the orchestrator skill (core, lean)
+│       ├── SPECIALISTS.md                       ← full 70-agent lookup table (§ 6.3 reference)
+│       ├── SELF_IMPROVEMENT.md                  ← self-improvement loop mechanics (§ 7 reference)
+│       ├── LEARNED_CONSTRAINTS.md               ← promoted correction rules (fallback home)
+│       ├── PERF_GATE.md                         ← Performance & Scalability Gate (§ 8 reference)
 │       ├── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
 │       └── SPARK.md                             ← unvalidated LAN inference (Spark/vLLM/llama.cpp) recipe
 └── agents/
@@ -239,8 +243,10 @@ it distills the correction into a structured rule and hands it to
 
 1. Appends the correction to [`corrections/LEDGER.md`](corrections/LEDGER.md) (git-controlled, human-readable).
 2. If the correction is durable enough to change future behavior (explicit "always"/"never"
-   language, or a second occurrence of the same correction), also patches this repo's own
-   `SKILL.md` under a `## Learned Constraints` section.
+   language, or a second occurrence of the same correction), also applies a **targeted patch**
+   — a tightened bullet, a table row, a short diagram — into whichever existing `SKILL.md`
+   section it actually belongs to (falling back to `LEARNED_CONSTRAINTS.md` only when no
+   section fits). Never a paragraph appended to the bottom of the file.
 3. Opens a PR with the change — via `gh` if installed/authenticated, otherwise it prints a
    ready-to-click GitHub compare URL so you can open the PR yourself.
 

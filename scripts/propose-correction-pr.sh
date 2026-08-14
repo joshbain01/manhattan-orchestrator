@@ -4,13 +4,19 @@
 #
 #  Turns one distilled human correction into a durable, git-controlled
 #  artifact: an append to corrections/LEDGER.md, and — when the rule is
-#  worth changing future behavior for (--status promote) — a patch to
-#  the orchestrator's own SKILL.md "Learned Constraints" section, all
-#  shipped as a single reviewable PR.
+#  worth changing future behavior for (--status promote) — a TARGETED
+#  patch into the orchestrator's own skill files, shipped as a single
+#  reviewable PR.
 #
 #  Design:
 #   - Thin interface: one script, one job. All git/worktree/PR plumbing
 #     is internal (deep module); the ledger file is the only seam.
+#   - Placement is the CALLER's job, not this script's: decide the most
+#     relevant existing section/table/checklist for the rule yourself
+#     (see skills/manhattan-orchestrator/SELF_IMPROVEMENT.md § Placement
+#     duty) and pass --target-file/--anchor/--patch-file accordingly.
+#     This script only guarantees the text lands exactly where asked,
+#     reliably and reviewably — it does not choose where.
 #   - Never touches your current checkout: does its work in an isolated
 #     `git worktree` off origin/<base-branch>.
 #   - Degrades gracefully with no `gh` CLI / no GitHub token: falls back
@@ -32,14 +38,30 @@
 #      --session-id "<session id>" \
 #      --occurrence-count 1 \
 #      --confidence 0.8 \
+#      [--target-file "skills/manhattan-orchestrator/SKILL.md"] \
+#      [--anchor "### 5.1 Architecture Acceptance Checklist"] \
+#      [--patch-file /path/to/hand-authored-concise-markdown-block.md] \
+#      [--review-notes "What a human reviewer should double-check"] \
+#      [--tests-performed "How this was verified (e.g. rubric self-score, dry-run)"] \
 #      [--dry-run]
 #
 #  Flags may repeat (--applies-when, --exceptions) to add multiple bullets.
+#
+#  --target-file defaults to skills/manhattan-orchestrator/LEARNED_CONSTRAINTS.md
+#  (the fallback home) — pass an --anchor within SKILL.md itself (or any other
+#  file) to place the rule as a targeted patch inside an existing section
+#  instead. Without --patch-file, a single concise bullet (`- **[ID]** <rule>`)
+#  is inserted at the anchor (or appended to the target file if no anchor is
+#  given); with --patch-file, its exact content is inserted instead — use this
+#  for a table row, a tightened existing bullet, or a short diagram so the
+#  patch matches the surrounding document's tone instead of always being a
+#  new prose paragraph.
 # ============================================================
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SKILL_FILE_REL="skills/manhattan-orchestrator/SKILL.md"
+DEFAULT_TARGET_FILE_REL="skills/manhattan-orchestrator/LEARNED_CONSTRAINTS.md"
+DEFAULT_ANCHOR="Empty until the first correction is promoted here"
 BASE_BRANCH="main"
 STATUS="candidate"
 CONFIDENCE="0.6"
@@ -47,6 +69,11 @@ OCCURRENCE_COUNT="1"
 DRY_RUN=false
 APPLIES_WHEN=()
 EXCEPTIONS=()
+TARGET_FILE_REL=""
+ANCHOR=""
+PATCH_FILE=""
+REVIEW_NOTES=""
+TESTS_PERFORMED=""
 
 usage() { grep -E '^#( |$)' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
@@ -67,11 +94,22 @@ while [[ $# -gt 0 ]]; do
     --confidence) CONFIDENCE="$2"; shift 2 ;;
     --base-branch) BASE_BRANCH="$2"; shift 2 ;;
     --repo-dir) REPO_DIR="$2"; shift 2 ;;
+    --target-file) TARGET_FILE_REL="$2"; shift 2 ;;
+    --anchor) ANCHOR="$2"; shift 2 ;;
+    --patch-file) PATCH_FILE="$2"; shift 2 ;;
+    --review-notes) REVIEW_NOTES="$2"; shift 2 ;;
+    --tests-performed) TESTS_PERFORMED="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown flag: $1" >&2; exit 1 ;;
   esac
 done
+
+TARGET_FILE_REL="${TARGET_FILE_REL:-$DEFAULT_TARGET_FILE_REL}"
+if [[ -n "$PATCH_FILE" && ! -f "$PATCH_FILE" ]]; then
+  echo "--patch-file not found: $PATCH_FILE" >&2
+  exit 1
+fi
 
 for req in ID TITLE RULE AGENT_BEHAVIOR HUMAN_CORRECTION; do
   if [[ -z "${!req:-}" ]]; then
@@ -108,6 +146,8 @@ HUMAN_CORRECTION="$(sanitize "$HUMAN_CORRECTION")"
 SESSION_ID="$(sanitize "${SESSION_ID:-}")"
 TRIGGER_PHASE="$(sanitize "${TRIGGER_PHASE:-}")"
 TASK_TYPE="$(sanitize "${TASK_TYPE:-}")"
+REVIEW_NOTES="$(sanitize "${REVIEW_NOTES:-}")"
+TESTS_PERFORMED="$(sanitize "${TESTS_PERFORMED:-}")"
 for i in "${!APPLIES_WHEN[@]}"; do APPLIES_WHEN[$i]="$(sanitize "${APPLIES_WHEN[$i]}")"; done
 for i in "${!EXCEPTIONS[@]}"; do EXCEPTIONS[$i]="$(sanitize "${EXCEPTIONS[$i]}")"; done
 
@@ -140,7 +180,11 @@ info "Creating isolated worktree at $WORKTREE_DIR (branch: $BRANCH)"
 git worktree add -B "$BRANCH" "$WORKTREE_DIR" "origin/${BASE_BRANCH}" --quiet
 
 LEDGER_FILE="$WORKTREE_DIR/corrections/LEDGER.md"
-SKILL_FILE="$WORKTREE_DIR/$SKILL_FILE_REL"
+TARGET_FILE="$WORKTREE_DIR/$TARGET_FILE_REL"
+if [[ "$STATUS" == "promote" && ! -f "$TARGET_FILE" ]]; then
+  echo "--target-file not found in worktree: $TARGET_FILE_REL" >&2
+  exit 1
+fi
 
 # ── Build the ledger entry ────────────────────────────────
 {
@@ -171,40 +215,48 @@ SKILL_FILE="$WORKTREE_DIR/$SKILL_FILE_REL"
 } >> "$LEDGER_FILE"
 success "Appended ${ID} to corrections/LEDGER.md"
 
-# ── If promoting, patch SKILL.md's Learned Constraints section ───
+# ── If promoting, apply a TARGETED patch (not a blind bottom-append) ─────
+# Placement is the caller's job (see SELF_IMPROVEMENT.md § Placement duty):
+# pass --anchor to insert right after an existing line (a checklist, a
+# table, a section header) in --target-file, and --patch-file to supply
+# the exact concise markdown to insert there (a table row, a tightened
+# bullet, a small diagram) instead of an auto-generated paragraph. With
+# neither, falls back to a single `- **[ID]** <rule>` bullet appended to
+# --target-file (default LEARNED_CONSTRAINTS.md) — never SKILL.md's body.
 if [[ "$STATUS" == "promote" ]]; then
-  ANCHOR="## Learned Constraints (self-improvement loop)"
-  if ! grep -qF "$ANCHOR" "$SKILL_FILE"; then
-    {
-      echo ""
-      echo "---"
-      echo ""
-      echo "$ANCHOR"
-      echo ""
-      echo "Rules promoted from the correction ledger (\`corrections/LEDGER.md\`). Each rule is"
-      echo "binding on future sessions until superseded by a later entry citing its id."
-    } >> "$SKILL_FILE"
-  fi
-  # Idempotent: replace an existing bullet for this ID, or append a new one.
-  RULE_LINE="- **[${ID}]** ${RULE}"
-  if grep -qF "**[${ID}]**" "$SKILL_FILE"; then
-    # Update in place (avoid mktemp: system /tmp is not writable in some
-    # sandboxed agent environments — use an in-repo scratch file instead).
-    tmp="$SCRATCH_ROOT/skill-patch-$$.tmp"
-    awk -v id="**[${ID}]**" -v line="$RULE_LINE" '
-      { if (index($0, id) > 0) print line; else print $0 }
-    ' "$SKILL_FILE" > "$tmp" && mv "$tmp" "$SKILL_FILE"
-    info "Updated existing rule ${ID} in SKILL.md"
+  if [[ -n "$PATCH_FILE" ]]; then
+    PATCH_CONTENT="$(cat "$PATCH_FILE")"
   else
-    echo "$RULE_LINE" >> "$SKILL_FILE"
-    info "Appended new rule ${ID} to SKILL.md"
+    PATCH_CONTENT="- **[${ID}]** ${RULE}"
+  fi
+
+  # Idempotent: an existing block/bullet tagged with this ID is replaced,
+  # not duplicated, on re-promotion (avoid mktemp: /tmp may not be
+  # writable in sandboxed agent environments — use an in-repo scratch file).
+  tmp="$SCRATCH_ROOT/patch-$$.tmp"
+  if grep -qF "[${ID}]" "$TARGET_FILE"; then
+    awk -v id="[${ID}]" -v content="$PATCH_CONTENT" '
+      index($0, id) > 0 { print content; next } { print }
+    ' "$TARGET_FILE" > "$tmp" && mv "$tmp" "$TARGET_FILE"
+    info "Updated existing patch for ${ID} in ${TARGET_FILE_REL}"
+  elif [[ -n "$ANCHOR" ]] && grep -qF "$ANCHOR" "$TARGET_FILE"; then
+    awk -v anchor="$ANCHOR" -v content="$PATCH_CONTENT" '
+      { print } index($0, anchor) > 0 { print content }
+    ' "$TARGET_FILE" > "$tmp" && mv "$tmp" "$TARGET_FILE"
+    info "Inserted targeted patch for ${ID} in ${TARGET_FILE_REL} after anchor"
+  else
+    if [[ -n "$ANCHOR" ]]; then
+      warn "Anchor not found in ${TARGET_FILE_REL} — falling back to end-of-file append: $ANCHOR"
+    fi
+    { echo ""; echo "$PATCH_CONTENT"; } >> "$TARGET_FILE"
+    info "Appended patch for ${ID} to end of ${TARGET_FILE_REL}"
   fi
 fi
 
 # ── Commit ─────────────────────────────────────────────────
 cd "$WORKTREE_DIR"
 git add corrections/LEDGER.md
-[[ "$STATUS" == "promote" ]] && git add "$SKILL_FILE_REL"
+[[ "$STATUS" == "promote" ]] && git add "$TARGET_FILE_REL"
 git -c user.email="orchestrator@local" -c user.name="Manhattan Orchestrator" \
   commit --quiet -m "self-improve(${ID}): ${TITLE}" \
   -m "Status: ${STATUS}" \
@@ -236,10 +288,32 @@ else
 fi
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  PLACEMENT_DESC="${TARGET_FILE_REL}"
+  [[ -n "$ANCHOR" ]] && PLACEMENT_DESC="${PLACEMENT_DESC} (after: \"${ANCHOR}\")"
+  PR_BODY="$(cat <<PRBODY
+## Reason for this change
+${HUMAN_CORRECTION}
+
+## What was done
+- Agent behavior being corrected: ${AGENT_BEHAVIOR}
+- Durable rule (status: ${STATUS}): ${RULE}
+- Ledger entry: \`corrections/LEDGER.md\` § ${ID}
+- Skill-file placement: ${PLACEMENT_DESC}
+
+## How to review
+1. Read the ledger entry (\`corrections/LEDGER.md\` § ${ID}) for full correction context (trigger phase: ${TRIGGER_PHASE:-unspecified}; task type: ${TASK_TYPE:-unspecified}).
+2. Confirm the patch in ${TARGET_FILE_REL} reads as a targeted, concise addition in the surrounding section's existing tone — not a bottom-of-file paragraph.
+3. Re-score against \`.github/CHANGE_RUBRIC.md\` independently before approving (per the double-blind rule — author's self-score is not sufficient).
+
+## Tests performed
+${TESTS_PERFORMED:-Self-scored against .github/CHANGE_RUBRIC.md before proposing (see ledger entry); this is a documentation/skill-instruction change with no executable test suite.}
+
+Session: ${SESSION_ID:-unknown}
+PRBODY
+)"
   if PR_URL="$(gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
     --title "self-improve(${ID}): ${TITLE}" \
-    --body "$(printf 'Status: %s\n\nAgent behavior: %s\n\nHuman correction: %s\n\nDurable rule: %s\n\nSession: %s' \
-      "$STATUS" "$AGENT_BEHAVIOR" "$HUMAN_CORRECTION" "$RULE" "${SESSION_ID:-unknown}")" 2>"$SCRATCH_ROOT/gh-err.log")"; then
+    --body "$PR_BODY" 2>"$SCRATCH_ROOT/gh-err.log")"; then
     success "Opened PR: $PR_URL"
   else
     warn "gh pr create failed — the branch was already pushed. Open the PR manually:"

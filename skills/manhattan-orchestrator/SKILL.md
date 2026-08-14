@@ -315,6 +315,7 @@ When delivering the final result to the user:
    - Did every user-facing claim clear the Golden-Path Slice Probe (Phase 4.1) in a real browser, or is it labeled `[Unverifiable — slice broken]` / downgraded to Hypothesis?
    - For any non-trivial/high-risk change, did the Multi-Domain QA Panel (Phase 4.3) CLEAR — no unresolved `Not-happy`, every panelist's #1 fix resolved or deferred-with-rationale, and each blocking finding independently re-verified by the orchestrator?
    - If the user reads only the first paragraph, is the understanding correct and calibrated?
+   - Did any opportunistic UX/visual finding beyond the literal ask get flagged for approval (with a screenshot, and a Jira comment if ticket-driven) instead of silently applied? (`[CORR-2026-08-14-001]`)
 
 ### 5.1 Architecture Acceptance Checklist (Mandatory for code changes)
 Before final delivery, the orchestrator must explicitly answer:
@@ -325,14 +326,16 @@ Before final delivery, the orchestrator must explicitly answer:
 
 ### 5.2 Self-Improvement Capture (Correction → Ledger → PR)
 Before ending the session, check whether the human corrected your behavior during this
-run (see § 7 for the full detection/promotion policy). If so:
-1. Distill the correction into the structured schema (§ 7.2).
-2. Decide `candidate` vs `promote` per the promotion policy (§ 7.3).
-3. Run `scripts/propose-correction-pr.sh` (in the manhattan-orchestrator repo — locate it
+run (see § 7.1 for the full trigger check). If so:
+1. Distill the correction into the schema and decide `candidate` vs `promote` per
+   `SELF_IMPROVEMENT.md`.
+2. Run `scripts/propose-correction-pr.sh` (in the manhattan-orchestrator repo — locate it
    via `$MANHATTAN_ORCHESTRATOR_REPO` if set, else search the workspace, else ask once)
-   with the distilled fields. Report the resulting PR URL (or the printed compare URL if
+   with the distilled fields. Author the SKILL.md/LEARNED_CONSTRAINTS.md patch yourself,
+   targeted and concise (see `SELF_IMPROVEMENT.md` § Placement duty) — never a raw
+   bottom-of-file paragraph. Report the resulting PR URL (or the printed compare URL if
    no `gh`/token is available) to the user as part of delivery — don't silently skip it.
-4. If nothing was corrected this session, skip § 7 entirely — this step must never add
+3. If nothing was corrected this session, skip § 7 entirely — this step must never add
    noise when there's nothing to learn.
 
 ### 5.3 API Documentation Acceptance Checklist (Mandatory for code changes)
@@ -341,6 +344,19 @@ Before final delivery, the orchestrator must explicitly confirm:
 2. Does every doc (README, OpenAPI spec, SKILL.md, wayfinder map, inline comments) accurately reflect the shipped implementation?
 3. If doc drift was found, was in-repo drift corrected before delivery (and external drift flagged/surfaced, not deferred)?
 4. Are external doc flags (Confluence, Jira, Swagger Hub) surfaced to the user so they can act on them?
+
+### 5.4 Ticket-Driven Git Workflow (Mandatory when work originates from a tracked ticket) `[CORR-2026-08-14-002]`
+| Step | Action |
+| :--- | :--- |
+| Before starting | Verify the local repo is clean and up to date with `main`; `git checkout -b <TICKET-KEY>-<slugified-summary>` off it |
+| During work | All implementation stays on that branch — never commit directly to `main` |
+| Once the human agrees the changes are ready | Run the project's test command; correct only issues in code authored on this branch — never fix pre-existing/unrelated failures |
+| Stage | `git add <each changed file>` explicitly — never `-A`/`.`, never a file you didn't author |
+| Commit | One detailed message: what changed and why |
+| Push | `git push -u origin <branch>` — never push to `main` |
+| Force-push / hard-reset | Never run `git push --force`/`--force-with-lease` or `git reset --hard` without asking the human first and getting an explicit go-ahead — even on a branch only you created this session. |
+| PR | Draft body: Reason for the change / What was done / How to review / Tests performed |
+| Ticket | Comment with a summary + PR link, then transition it to Review |
 
 ---
 
@@ -433,94 +449,7 @@ Return a structured Markdown document with the three deliverables above.
 
 ### 6.3 Selecting the Right Specialist Agent
 
-Match the task domain to the specialist. When in doubt, prefer a **narrower specialist** over a broad one.
-
-#### 🏗️ Engineering
-
-| When you need... | Use this agent | File |
-| :--- | :--- | :--- |
-| System design, ADRs, trade-off analysis | 🏛️ Software Architect | `engineering-software-architect.md` |
-| API design, scalability, server systems | 🏗️ Backend Architect | `engineering-backend-architect.md` |
-| React/Vue/Angular, UI, Core Web Vitals | 🖥️ Frontend Developer | `engineering-frontend-developer.md` |
-| ML models, AI pipelines, deployment | 🤖 AI Engineer | `engineering-ai-engineer.md` |
-| CI/CD, infra automation, cloud ops | ⚙️ DevOps Automator | `engineering-devops-automator.md` |
-| SLOs, error budgets, observability | 🛡️ SRE | `engineering-sre.md` |
-| PR review, code quality, security | 👁️ Code Reviewer | `engineering-code-reviewer.md` |
-| Database schema, query perf, indexing | 🗄️ Database Optimizer | `engineering-database-optimizer.md` |
-| iOS/Android, React Native, Flutter | 📲 Mobile App Builder | `engineering-mobile-app-builder.md` |
-| Fast POCs and MVPs | ⚡ Rapid Prototyper | `engineering-rapid-prototyper.md` |
-| Complex Laravel/Livewire patterns | 💎 Senior Developer | `engineering-senior-developer.md` |
-| Git strategy, branching, history | 🌿 Git Workflow Master | `engineering-git-workflow-master.md` |
-| Incident management, post-mortems | 🚨 Incident Response Commander | `engineering-incident-response-commander.md` |
-| Developer docs, API reference | 📚 Technical Writer | `engineering-technical-writer.md` |
-| Minimum-footprint changes only | 🪡 Minimal Change Engineer | `engineering-minimal-change-engineer.md` |
-| Multi-agent architecture & governance | 🕸️ Multi-Agent Systems Architect | `engineering-multi-agent-systems-architect.md` |
-| Onboarding someone to an unfamiliar codebase | 🧭 Codebase Onboarding Engineer | `engineering-codebase-onboarding-engineer.md` |
-| Data pipelines, lakehouse, ETL/ELT | 🔧 Data Engineer | `engineering-data-engineer.md` |
-| OAuth, SSO, SAML, OIDC | 🔐 Identity & Access Engineer | `engineering-identity-access-engineer.md` |
-| Privacy, PII handling, GDPR | 🕵️ Privacy Engineer | `engineering-privacy-engineer.md` |
-| Prompt design and LLM optimization | 🧬 Prompt Engineer | `engineering-prompt-engineer.md` |
-| RAG pipelines and retrieval quality | 🔍 RAG Pipeline Engineer | `engineering-rag-pipeline-engineer.md` |
-| Embedded, bare-metal, RTOS | 🔩 Embedded Firmware Engineer | `engineering-embedded-firmware-engineer.md` |
-| Smart contracts, DeFi, EVM | ⛓️ Solidity Smart Contract Engineer | `engineering-solidity-smart-contract-engineer.md` |
-| Cloud cost optimization | 💰 FinOps Engineer | `engineering-finops-engineer.md` |
-| Public/partner API platforms | 🔌 API Platform Engineer | `engineering-api-platform-engineer.md` |
-| Section 508 / accessibility | ♿ Section 508 Specialist | `engineering-section-508-specialist.md` |
-| Rust refactoring at repo scale | 🦀 Rust Refactoring Specialist | `engineering-rust-refactoring-specialist.md` |
-| WebAssembly, Wasm, Rust→browser | 🧩 WebAssembly Engineer | `engineering-webassembly-engineer.md` |
-| Payments, Stripe, billing | 💳 Payments & Billing Engineer | `engineering-payments-billing-engineer.md` |
-| Search, Elasticsearch, relevance | 🔎 Search Relevance Engineer | `engineering-search-relevance-engineer.md` |
-| Video streaming, HLS/DASH, ABR | 🎬 Video Streaming Engineer | `engineering-video-streaming-engineer.md` |
-| Voice/speech pipelines, Whisper | 🎙️ Voice AI Integration Engineer | `engineering-voice-ai-integration-engineer.md` |
-| Realtime collab, WebSocket, CRDTs | 🤝 Realtime Collaboration Engineer | `engineering-realtime-collaboration-engineer.md` |
-| i18n, ICU MessageFormat, RTL | 🌍 Internationalization Engineer | `engineering-i18n-engineer.md` |
-| WordPress performance / WooCommerce | ⚡ WordPress Performance Engineer | `engineering-wordpress-performance.md` |
-| Drupal performance / Drupal Commerce | ⚡ Drupal Performance Engineer | `engineering-drupal-performance.md` |
-| Desktop apps (Electron/Tauri) | 💻 Desktop App Engineer | `engineering-desktop-app-engineer.md` |
-| Developer tooling and CLIs | 🛠️ Developer Tooling Engineer | `engineering-developer-tooling-engineer.md` |
-| IoT fleet, MQTT, device provisioning | 📡 IoT Fleet Engineer | `engineering-iot-fleet-engineer.md` |
-| LLM fine-tuning, RLHF, SFT | 🧪 LLM Post-Training Engineer | `engineering-llm-post-training-engineer.md` |
-| Database HA, replication, DBRE | 🛟 Database Reliability Engineer | `engineering-database-reliability-engineer.md` |
-| Self-healing data pipelines | 🧬 AI Data Remediation Engineer | `engineering-ai-data-remediation-engineer.md` |
-| Data visualization, charts | 📈 Data Visualization Engineer | `engineering-data-visualization-engineer.md` |
-| Autonomous LLM cost/routing | ⚡ Autonomous Optimization Architect | `engineering-autonomous-optimization-architect.md` |
-| Drupal e-commerce | 🛒 Drupal Shopping Cart Engineer | `engineering-drupal-shopping-cart.md` |
-| Filament PHP admin UX | 🔧 Filament Optimization Specialist | `engineering-filament-optimization-specialist.md` |
-| Mobile app release, signing, TestFlight | 🚀 Mobile Release Engineer | `engineering-mobile-release-engineer.md` |
-| Email thread analysis and extraction | 📧 Email Intelligence Engineer | `engineering-email-intelligence-engineer.md` |
-| USWDS / US federal design system | 🏛️ USWDS Developer | `engineering-uswds-developer.md` |
-| IT service management (ITIL 4) | 🖧 IT Service Manager | `engineering-it-service-manager.md` |
-| CMS (WordPress / Drupal) dev | 🧱 CMS Developer | `engineering-cms-developer.md` |
-| OrgScript grammar and AST | 📜 OrgScript Engineer | `engineering-orgscript-engineer.md` |
-
-#### 🎨 Design & UX
-
-| When you need... | Use this agent | File |
-| :--- | :--- | :--- |
-| Brand identity, consistency, positioning | 🎨 Brand Guardian | `design-brand-guardian.md` |
-| AI image generation prompts | 📷 Image Prompt Engineer | `design-image-prompt-engineer.md` |
-| Culturally accurate, bias-free imagery | 🌈 Inclusive Visuals Specialist | `design-inclusive-visuals-specialist.md` |
-| Cognitive walkthroughs from user personas | 🎭 Persona Walkthrough Specialist | `design-persona-walkthrough.md` |
-| Visual design systems, component libraries | 🎨 UI Designer | `design-ui-designer.md` |
-| Pre-ship UI finish-gate critique | 🧱 UI Finish-Gate Reviewer | `design-ui-finish-gate-reviewer.md` |
-| CSS systems, dev-ready UX architecture | 📐 UX Architect | `design-ux-architect.md` |
-| Usability testing, user behavior analysis | 🔬 UX Researcher | `design-ux-researcher.md` |
-| Visual storytelling, multimedia narrative | 🎬 Visual Storyteller | `design-visual-storyteller.md` |
-| Brand delight, personality, whimsy | ✨ Whimsy Injector | `design-whimsy-injector.md` |
-
-#### 🧭 Product
-
-| When you need... | Use this agent | File |
-| :--- | :--- | :--- |
-| Behavioral psychology-driven UX nudges | 🧠 Behavioral Nudge Engine | `product-behavioral-nudge-engine.md` |
-| User feedback synthesis and prioritization | 🔍 Feedback Synthesizer | `product-feedback-synthesizer.md` |
-| Full product lifecycle ownership, roadmap | 🧭 Product Manager | `product-manager.md` |
-| Sprint planning, agile prioritization | 🎯 Sprint Prioritizer | `product-sprint-prioritizer.md` |
-| Market trends, competitive analysis | 🔭 Trend Researcher | `product-trend-researcher.md` |
-
-**Engineering agent files:** `~/.copilot/agents/engineering-*.md`
-**Design agent files:** `~/.copilot/agents/design-*.md`
-**Product agent files:** `~/.copilot/agents/product-*.md`
+Match the task domain to the specialist. When in doubt, prefer a **narrower specialist** over a broad one. Full lookup table (70 agents across Engineering/Design/Product): **`SPECIALISTS.md`** — load it when selecting an agent, not before.
 
 ---
 
@@ -541,13 +470,8 @@ are a failure mode this playbook must actively close. This loop turns a human co
 into a durable, git-controlled rule — without requiring the human to remember to ask for it,
 and without silently rewriting the orchestrator's own behavior with no review trail.
 
-**Thin interface:** one script, `scripts/propose-correction-pr.sh`, in the
-manhattan-orchestrator repo. **Deep module:** all git worktree/branch/commit/push/PR
-plumbing lives inside it. **Seam:** `corrections/LEDGER.md` is the only handoff surface
-between "a session learned something" and "the skill file changed."
-
-### 7.1 Correction Detection
-Treat any of the following, during or at the end of a session, as a correction signal:
+### 7.1 Correction Detection (check at the end of every session)
+Treat any of the following as a correction signal:
 - The human explicitly overrides or reverses something you did or proposed.
 - Generalizing language: "from now on", "always", "never", "in general", "going forward",
   "you keep doing X".
@@ -559,276 +483,23 @@ Do **not** treat ordinary scope decisions, clarifying answers, or one-off implem
 preferences as corrections — only genuine "you did this wrong / do it differently going
 forward" signals. Over-triggering defeats the purpose (noise, not less babysitting).
 
-### 7.2 Distillation Schema
-Convert the correction into this structure (persisted verbatim in the ledger — see
-`corrections/README.md` for the full schema and rationale):
-
-```yaml
-id: CORR-YYYY-MM-DD-NNN
-trigger: { phase: <playbook phase>, task_type: <short description> }
-agent_behavior: <what you did>
-human_correction: <what the human corrected>
-durable_rule: <the rule, stated so it can be mechanically checked next time>
-applies_when: [<condition>, ...]
-exceptions: [<condition that overrides the rule>, ...]
-evidence: { session_id: <id>, occurrence_count: <N> }
-confidence: <0.0-1.0>
-```
-
-### 7.3 Promotion Policy (candidate vs. promote)
-- **First occurrence, no generalizing language** → `--status candidate`. Logged to
-  `corrections/LEDGER.md` only. No PR — a single one-off doesn't earn a skill-file change.
-- **Explicit generalizing language** ("from now on", "always", "never", etc.) → promote
-  immediately with `--status promote`, regardless of occurrence count.
-- **Recurrence** — a materially similar `candidate` correction (same `trigger.phase` +
-  similar `agent_behavior`) appears again → auto-promote on the second occurrence.
-- **Contradiction** — a new rule that contradicts a previously promoted rule must supersede
-  it explicitly (cite the old `id`), never silently coexist with it.
-- Promoting appends/updates a bullet under SKILL.md's own `## Learned Constraints
-  (self-improvement loop)` section (below), keyed by `id` so re-promotion updates the
-  existing bullet instead of duplicating it.
-- **Anti-bloat gate (mandatory, no exceptions):** before running `--status promote`, self-score
-  the rule against `.github/CHANGE_RUBRIC.md`. If `Validated Value = 0` (no specific, cited
-  failure this would have prevented), it does **not** get promoted — leave it as `candidate`
-  indefinitely rather than promoting "just in case." Include the rubric scores in the PR body
-  the script prints/opens. This is what stops the self-improvement loop from being the
-  mechanism that quietly bloats the orchestrator it's supposed to be protecting.
-- **Consolidation duty:** if this is the 3rd+ rule promoted under `Learned Constraints` in a
-  rolling 90-day window, the same PR must also merge, tighten, or demote at least one existing
-  rule (see `.github/CHANGE_RUBRIC.md` § Consolidation duty) — growth without pruning is a
-  rubric failure, not a free pass.
-
-### 7.4 Invocation
-```
-scripts/propose-correction-pr.sh \
-  --id CORR-2026-08-14-001 --status promote|candidate \
-  --title "<short summary>" --trigger-phase "<phase>" --task-type "<type>" \
-  --agent-behavior "<...>" --human-correction "<...>" --rule "<...>" \
-  --applies-when "<condition>" [--applies-when "<condition>" ...] \
-  --exceptions "<condition>" --session-id "<id>" [--dry-run]
-```
-It creates an isolated git worktree off `origin/main` (never touches your current
-checkout), appends the ledger entry, patches SKILL.md if promoting, commits, pushes, and
-opens a PR via `gh` if available — otherwise it prints a ready-to-click GitHub compare URL.
-This is a hard requirement of the design: **the mechanism must not fail silently just
-because the sandbox has no `gh` CLI or GitHub token** (the common case for an agent
-session) — it degrades to "here's the URL, click to open the PR" instead of erroring out.
-
-### 7.5 Isolation Rule
-The script runs as a narrow, single-purpose worker (Tier 3) — invoke it directly; do not
-wrap it in a general-purpose sub-agent. It has no need-to-know beyond the distilled
-correction fields passed on its command line.
-
----
-
-## Learned Constraints (self-improvement loop)
-
-Rules promoted from the correction ledger (`corrections/LEDGER.md`). Each rule is binding
-on future sessions until superseded by a later entry citing its id. Empty until the first
-correction is promoted.
+If a signal fires: distill it, decide candidate vs. promote, and run the loop — full
+mechanics, promotion policy, and invocation syntax in **`SELF_IMPROVEMENT.md`** (load it
+only once this trigger actually fires). Promoted rules land as a targeted patch in the
+most relevant existing SKILL.md section, or — only if none fits — in
+**`LEARNED_CONSTRAINTS.md`**. If nothing was corrected this session, skip both files entirely.
 
 ---
 
 ## 8. Performance & Scalability Gate
 
-A formal, opt-in audit protocol that systematically surfaces browser-side render
-costs, memory leaks, and bundle bloat before they reach production. Invoke it any
-time an effort adds significant UI complexity, wires live data, or prepares for a
-production readiness review.
+Opt-in audit protocol for browser-side render costs, memory leaks, and bundle bloat.
+Full procedure (5-phase: baseline → 3 parallel audits → independent verification →
+risk synthesis → tickets): **`PERF_GATE.md`** (load on invocation, not before).
 
-**When to invoke:**
-- A PR is approaching merge and involves a React SPA, live data pipeline, or long-lived browser session
-- A user reports the app feels sluggish, memory grows over a shift, or the initial load is slow
-- The Wayfinder map's destination is production-readiness and no perf review has been run
+**Invoke** (`/perf-gate` or "run the perf gate on `<app>`") **when:** a PR nears merge
+touching a React SPA/live data/long-lived session; a user reports sluggishness or memory
+growth; or a Wayfinder map targets production-readiness with no perf review yet.
 
-**When NOT to invoke:**
-- The change is purely backend (Python, database schema, infra config)
-- The change is a documentation or config-only update
-- A perf gate has already run within the current PR/effort cycle
-
----
-
-### 8.1 Phase P1 — Baseline Measurement (always first, always AFK)
-
-Before spawning any domain agents, establish a quantitative baseline so findings
-are grounded in data, not speculation. Run this in the terminal:
-
-```bash
-# Process RSS and CPU at idle
-ps aux | grep "[v]ite\|[n]ode.*app" | awk '{printf "PID:%s RSS:%sMB CPU:%s%%\n", $2, $6/1024, $3}'
-
-# Top memory consumers on the machine
-ps aux --sort=-%mem | head -12 | awk 'NR>1 {printf "%-24s RSS:%sMB CPU:%s%%\n", $11, $6/1024, $3}'
-```
-
-Record the baseline in your output as `[State Tag] Vite RSS / CPU: [Verified Fact]`.
-If the server-side process is already lean (< 50 MB RSS, < 1% CPU at idle), the
-problem space is browser-side — proceed to Phase P2.
-
----
-
-### 8.2 Phase P2 — Parallel Domain Audits (three simultaneous read-only subagents)
-
-Spawn exactly **three** parallel specialist subagents. Each operates independently
-with read-only access. Pass each only its own scope — never the full codebase or
-another agent's findings.
-
-#### Subagent A — React Render Analyst (Frontend Developer specialist)
-
-**Scope:** `src/` tree — components, pages, hooks, data providers
-
-**Mandate — audit for and report on:**
-1. **Context blast radius** — how many components subscribe to each context? Is state split (stable vs. volatile) or monolithic?
-2. **Tick/polling re-renders** — is there a clock/tick counter driving re-renders? How many components depend on it? What is the re-render rate/minute?
-3. **`useMemo` discipline** — are expensive derived arrays (device rows, chart series, entity maps) wrapped in `useMemo` with complete dep arrays?
-4. **`useCallback` on event handlers** — are callbacks passed to children recreated on every render (breaking `React.memo`)?
-5. **`React.memo` usage** — are list-item components and stable subtrees wrapped? Are any memoized components defeated by unstable prop objects?
-6. **Chart library props** — are inline `tick={{...}}` / `contentStyle={{...}}` / `domain={[...]}` literals recreated on every render?
-7. **Selector pattern** — do components subscribe to a full world object and derive their slice inline?
-
-**Output format:** One finding per section, each with Severity (Critical/High/Medium/Low), file path + line range, root cause, estimated renders/cycle impact, and recommended fix.
-
-#### Subagent B — Memory Leak Hunter (Code Reviewer specialist)
-
-**Scope:** `src/hooks/`, `src/data/`, `src/components/`, and all files matching `setInterval|addEventListener|IntersectionObserver|ResizeObserver|AbortController|WebSocket|EventSource`
-
-**Mandate — look for and report on:**
-- **Category A — Missing cleanup:** `setInterval` without `clearInterval`, `addEventListener` without `removeEventListener`, `Observer` instances without `.disconnect()`, `AbortController` signals never `.abort()`ed in `useEffect` cleanup
-- **Category B — Growing data structures:** state arrays that grow unboundedly (`setArr(prev => [...prev, new])`), `useRef` caches never pruned, `realOverlay`-style accumulations never evicted
-- **Category C — Stale closures:** `useEffect` / `setInterval` callbacks with incomplete dep arrays capturing large objects, keeping old render trees alive
-- **Category D — Browser global leaks:** `window`/`document` listeners attached on mount without cleanup on unmount
-
-**Output format:** One finding per section, each with Category (A/B/C/D), Severity, file path + line range, leak mechanism, growth rate (one-time / per-cycle / unbounded), and recommended fix with teardown code pattern.
-
-#### Subagent C — Bundle & Data Efficiency Analyst (Frontend Developer specialist)
-
-**Scope:** `vite.config.js`, `package.json`, `src/` import graph, live data fetch logic
-
-**Mandate — audit for and report on:**
-1. **Code splitting** — are heavy page/component modules loaded with `React.lazy()` + `Suspense`, or all eagerly imported?
-2. **Heavy library isolation** — are large deps (leaflet, recharts, heavy icon sets) isolated to the pages that use them, or pulled into the initial bundle via shared components?
-3. **Vite `build` config** — is there a `build` key with `rollupOptions.output.manualChunks`? Is there a `chunkSizeWarningLimit`? Is `optimizeDeps.include` set for heavy pre-bundling?
-4. **Live data polling cadence** — what interval is `/api/world` or equivalent fetched? Is it a full payload or incremental? Is there debounce/throttle on state updates?
-5. **Context `useMemo` deps** — does the data context value `useMemo` depend on too many independent values, triggering broad re-renders on any single change?
-
-**Output format:** One finding per section, each with Severity, file paths, current behavior, quantified performance impact (extra KB, renders/poll, etc.), and recommended fix.
-
----
-
-### 8.3 Phase P3 — Independent Verification (Code Reviewer specialist, separate from subagents A/B/C)
-
-When all three audit reports arrive, extract the **top 8–10 highest-severity claims** across the three reports and pass them to a fresh Code Reviewer subagent that has NOT seen the other agents' work.
-
-**Verification prompt template:**
-
-```
-You are an independent code auditor. Specialist agents have produced findings about
-[app name]. Your job is to spot-check the top claims by reading the actual source
-files. Do NOT trust the specialists — verify each claim against the code.
-
-For each claim:
-- State CONFIRMED, REFUTED, or PARTIALLY TRUE
-- Show the exact code snippet that confirms or refutes it
-- If refuted: state what the code actually does
-
-Claims to verify:
-[paste top 8–10 claims with file paths]
-```
-
-The verifier must read the actual source files. Any claim it **refutes** is
-eliminated from the findings before delivery. This is the Double-Blind rule
-applied to performance analysis.
-
-Record results as:
-- `[State Tag] Claim N: [Verified Fact]` (confirmed)
-- `[State Tag] Claim N: [Verified Fact — ELIMINATED]` (refuted)
-
----
-
-### 8.4 Phase P4 — Synthesis and Risk Ranking
-
-After verification, synthesize all confirmed/partially-true findings into a single
-ranked table using the standard Risk Matrix (U × I):
-
-```markdown
-| Tier | # | Finding | Files | Risk | Fix Summary |
-|:-----|:--|---------|-------|:----:|:------------|
-| Critical | C1 | ... | ... | 9 | ... |
-| High | H1 | ... | ... | 6 | ... |
-| Medium | M1 | ... | ... | 4 | ... |
-```
-
-**Tier definitions:**
-- **Critical:** Fix before any production deployment. Typically: no code splitting, no React.memo, missing build config.
-- **High:** Fix in the next sprint. Typically: independent poll intervals, unstable prop objects defeating memo, unaborted fetch closures.
-- **Medium:** Hygiene pass. Typically: dead tick subscriptions, listener cleanups, small dep array bugs, unbounded state arrays.
-- **Low / Correctness:** Single-line fixes, stale closure artifacts, eslint-suppress removals.
-
-Also call out explicitly: **"What is NOT a problem"** — findings the verification
-agent refuted, or areas where the baseline confirms the server-side process is lean.
-This prevents false urgency.
-
----
-
-### 8.5 Phase P5 — Ticket Generation and Wayfinder Registration
-
-For each finding in the synthesis table:
-
-1. **Generate an implementation-ready ticket** using the ticket skill format:
-   ```
-   Title:
-   Problem:
-   Expected Behavior:
-   Implementation Requirements:
-   Acceptance Criteria:
-   Data Sources:
-   Do Not:
-   Notes for Coding Agent:
-   ```
-
-2. **Apply the implementation dependency order** — ticket chain constraints must be
-   explicit. The standard dependency chain for React SPA perf is:
-   ```
-   Build config → Lazy loading → Stable prop objects → React.memo → Context split
-   ```
-   All memory leak fixes and dep array fixes are **independent** and can be worked in parallel.
-
-3. **Register tickets to the active Wayfinder map** (if one exists for this effort).
-   Number tickets sequentially from the map's last ticket. Wire blocking edges
-   second pass (issues need IDs before they can reference each other).
-
-4. **State the frontier explicitly** — which tickets are unblocked and can be
-   picked up immediately, which are blocked and why.
-
----
-
-### 8.6 Performance Gate Invocation Summary
-
-```
-invoke: /perf-gate or "run the perf gate on <app>"
-          │
-          ▼
-   Phase P1: Baseline (terminal — RSS/CPU snapshot)
-          │
-          ▼
-   Phase P2: Parallel audits (subagents A, B, C simultaneously)
-      A: React render analyst
-      B: Memory leak hunter
-      C: Bundle & data efficiency
-          │
-          ▼
-   Phase P3: Independent verifier (Code Reviewer, blind to A/B/C)
-      Eliminate refuted claims
-          │
-          ▼
-   Phase P4: Synthesis — risk-ranked table + "what is NOT a problem" section
-          │
-          ▼
-   Phase P5: Tickets → Wayfinder map → frontier declaration
-```
-
-**Gate output contract:** A risk-ranked findings table, a "not a problem" section,
-N implementation-ready tickets, and a clear frontier statement. The gate produces
-decisions and tickets — it does not implement fixes.
-- **[CORR-2026-08-14-001]** When the orchestrator discovers a visual/UX-affecting issue or improvement opportunity during implementation that goes beyond the literal, explicit ask, it must not silently fold the change into the delivered diff. It must surface the finding as a discrete, approvable decision -- describe the issue/options, attach a marked-up/annotated screenshot when the finding is visual, and request guidance (preferably as a comment on the originating Jira ticket when the work is ticket-driven) -- before implementing. Exception: a change required for the literal ask to function (a blocking bug in the requested feature itself) may still be fixed directly, but must be called out in delivery as an in-scope necessary fix, distinguished from an opportunistic improvement.
-- **[CORR-2026-08-14-002]** For any ticket-driven implementation task: (1) Before starting work, verify the local repo is on a clean, up-to-date main (or bring it there), then create a new branch named <TICKET-KEY>-<slugified-summary> off main. (2) Do all implementation work on that branch. (3) Only after the human has explicitly agreed to the code changes: run the project's test command (e.g. make test); do not fix pre-existing failures unrelated to the branch's own changes -- only correct issues in code authored on this branch; stage only the files the branch actually changed (never git add -A / . blindly, never include unrelated auto-modified files like tool-baseline drift); commit with a detailed message describing what changed and why; push the branch to origin (never commit or push directly to main); draft a detailed PR body covering the reason for the change, what was done, how to review it, and what tests were run; then post a comment on the originating Jira ticket summarizing the change and PR link, and transition the ticket to Review.
+**Skip when:** the change is backend-only, docs/config-only, or a perf gate already ran
+this PR/effort cycle.
