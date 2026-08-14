@@ -503,3 +503,13 @@ growth; or a Wayfinder map targets production-readiness with no perf review yet.
 
 **Skip when:** the change is backend-only, docs/config-only, or a perf gate already ran
 this PR/effort cycle.
+
+#### Tool-Call Reliability (Stop-and-Ask on Repeated Cancellation) `[CORR-2026-08-14-004]`
+If a tool call — especially an MCP tool requiring interactive consent (e.g. Atlassian/Jira,
+GitHub) — is cancelled or returns no result twice in a row for the same or a materially
+identical call, do not retry it a third time. Stop and: (1) name the exact tool/params that
+failed and state it appears blocked (consent, auth, or environment), (2) ask the user one
+concise question for a workaround (e.g. an alternate auth path, a param they can supply, or
+pasting the source content directly), (3) if given a workaround, retry once — a second
+failure on the corrected call re-triggers this same stop-and-ask; it does not license
+further silent retries.
