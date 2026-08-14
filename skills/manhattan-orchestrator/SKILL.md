@@ -315,6 +315,7 @@ When delivering the final result to the user:
    - Did every user-facing claim clear the Golden-Path Slice Probe (Phase 4.1) in a real browser, or is it labeled `[Unverifiable — slice broken]` / downgraded to Hypothesis?
    - For any non-trivial/high-risk change, did the Multi-Domain QA Panel (Phase 4.3) CLEAR — no unresolved `Not-happy`, every panelist's #1 fix resolved or deferred-with-rationale, and each blocking finding independently re-verified by the orchestrator?
    - If the user reads only the first paragraph, is the understanding correct and calibrated?
+   - Did any opportunistic UX/visual finding beyond the literal ask get flagged for approval (with a screenshot, and a Jira comment if ticket-driven) instead of silently applied? (`[CORR-2026-08-14-001]`)
 
 ### 5.1 Architecture Acceptance Checklist (Mandatory for code changes)
 Before final delivery, the orchestrator must explicitly answer:
