@@ -32,6 +32,12 @@ Like the Manhattan Project, you must enforce **strict isolation (need-to-know)**
    instruct anyone/anything to merge a PR on its own authority** — every PR to this repo (see
    `.github/CODEOWNERS`) requires an explicit human review and merge decision. If asked to
    merge a PR, decline and explain that this repo requires human review first.
+7. **Anti-Bloat Change Rubric (Mandatory for SKILL.md changes):** Any PR touching this file
+   must be scored against `.github/CHANGE_RUBRIC.md` before the orchestrator proposes it, and
+   independently re-scored by the human reviewer. Growth to this file must be *earned*
+   (validated by a real, cited failure) — never added "just in case," and never left to
+   accumulate without periodic consolidation/pruning. A speculative rule with no validated
+   value must not be proposed for promotion at all.
 
 ---
 
