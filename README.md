@@ -223,6 +223,25 @@ A *different* agent than the one that built the solution verifies it. The Devil'
 #### Phase 5: Deliver (Inverted Pyramid)
 Key answer first, then confidence level, then supporting facts, tagged as Verified Fact / Reported Fact / Assumption / Hypothesis.
 
+### Self-Improvement Loop
+
+The orchestrator watches for human corrections during a session (explicit overrides,
+"from now on"/"always"/"never" language, or a repeated correction). When it detects one,
+it distills the correction into a structured rule and hands it to
+[`scripts/propose-correction-pr.sh`](scripts/propose-correction-pr.sh), which:
+
+1. Appends the correction to [`corrections/LEDGER.md`](corrections/LEDGER.md) (git-controlled, human-readable).
+2. If the correction is durable enough to change future behavior (explicit "always"/"never"
+   language, or a second occurrence of the same correction), also patches this repo's own
+   `SKILL.md` under a `## Learned Constraints` section.
+3. Opens a PR with the change — via `gh` if installed/authenticated, otherwise it prints a
+   ready-to-click GitHub compare URL so you can open the PR yourself.
+
+This is the "cut a PR instead of me re-explaining the same thing every session" loop: one
+occurrence gets logged quietly; a real, generalizable correction becomes a reviewable PR
+against the orchestrator's own skill file. See [`corrections/README.md`](corrections/README.md)
+for the full schema and promotion policy.
+
 ---
 
 ## OpenClaw

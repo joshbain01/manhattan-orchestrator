@@ -290,6 +290,18 @@ Before final delivery, the orchestrator must explicitly answer:
 3. Are seams explicit enough that tests can isolate behavior without fragile setup?
 4. Did any module boundary become ambiguous, and if so, was it corrected?
 
+### 5.2 Self-Improvement Capture (Correction → Ledger → PR)
+Before ending the session, check whether the human corrected your behavior during this
+run (see § 7 for the full detection/promotion policy). If so:
+1. Distill the correction into the structured schema (§ 7.2).
+2. Decide `candidate` vs `promote` per the promotion policy (§ 7.3).
+3. Run `scripts/propose-correction-pr.sh` (in the manhattan-orchestrator repo — locate it
+   via `$MANHATTAN_ORCHESTRATOR_REPO` if set, else search the workspace, else ask once)
+   with the distilled fields. Report the resulting PR URL (or the printed compare URL if
+   no `gh`/token is available) to the user as part of delivery — don't silently skip it.
+4. If nothing was corrected this session, skip § 7 entirely — this step must never add
+   noise when there's nothing to learn.
+
 ---
 
 ## 6. Specialist Sub-Agents
@@ -479,3 +491,88 @@ Match the task domain to the specialist. When in doubt, prefer a **narrower spec
 3. **Route verification to a different agent.** If a Backend Architect designs a module, spawn a Code Reviewer (not the Architect) to audit it.
 4. **One specialist per domain slice.** Don't spawn two overlapping specialists on the same task — decompose first, then assign one specialist per piece.
 5. **Worker sub-agents (Tier 3) must receive only their immediate task**, stripped of all orchestrator and specialist context they don't need.
+
+---
+
+## 7. Self-Improvement Loop (Correction Capture & Skill Evolution)
+
+Green sessions that still require the human to re-explain the same constraint every time
+are a failure mode this playbook must actively close. This loop turns a human correction
+into a durable, git-controlled rule — without requiring the human to remember to ask for it,
+and without silently rewriting the orchestrator's own behavior with no review trail.
+
+**Thin interface:** one script, `scripts/propose-correction-pr.sh`, in the
+manhattan-orchestrator repo. **Deep module:** all git worktree/branch/commit/push/PR
+plumbing lives inside it. **Seam:** `corrections/LEDGER.md` is the only handoff surface
+between "a session learned something" and "the skill file changed."
+
+### 7.1 Correction Detection
+Treat any of the following, during or at the end of a session, as a correction signal:
+- The human explicitly overrides or reverses something you did or proposed.
+- Generalizing language: "from now on", "always", "never", "in general", "going forward",
+  "you keep doing X".
+- A `Not-happy` verdict from the Multi-Domain QA Panel (§ 4.3) that the human agrees with.
+- The human has to repeat substantively the same guidance they gave earlier this session
+  or (per `corrections/LEDGER.md`) in a prior one.
+
+Do **not** treat ordinary scope decisions, clarifying answers, or one-off implementation
+preferences as corrections — only genuine "you did this wrong / do it differently going
+forward" signals. Over-triggering defeats the purpose (noise, not less babysitting).
+
+### 7.2 Distillation Schema
+Convert the correction into this structure (persisted verbatim in the ledger — see
+`corrections/README.md` for the full schema and rationale):
+
+```yaml
+id: CORR-YYYY-MM-DD-NNN
+trigger: { phase: <playbook phase>, task_type: <short description> }
+agent_behavior: <what you did>
+human_correction: <what the human corrected>
+durable_rule: <the rule, stated so it can be mechanically checked next time>
+applies_when: [<condition>, ...]
+exceptions: [<condition that overrides the rule>, ...]
+evidence: { session_id: <id>, occurrence_count: <N> }
+confidence: <0.0-1.0>
+```
+
+### 7.3 Promotion Policy (candidate vs. promote)
+- **First occurrence, no generalizing language** → `--status candidate`. Logged to
+  `corrections/LEDGER.md` only. No PR — a single one-off doesn't earn a skill-file change.
+- **Explicit generalizing language** ("from now on", "always", "never", etc.) → promote
+  immediately with `--status promote`, regardless of occurrence count.
+- **Recurrence** — a materially similar `candidate` correction (same `trigger.phase` +
+  similar `agent_behavior`) appears again → auto-promote on the second occurrence.
+- **Contradiction** — a new rule that contradicts a previously promoted rule must supersede
+  it explicitly (cite the old `id`), never silently coexist with it.
+- Promoting appends/updates a bullet under SKILL.md's own `## Learned Constraints
+  (self-improvement loop)` section (below), keyed by `id` so re-promotion updates the
+  existing bullet instead of duplicating it.
+
+### 7.4 Invocation
+```
+scripts/propose-correction-pr.sh \
+  --id CORR-2026-08-14-001 --status promote|candidate \
+  --title "<short summary>" --trigger-phase "<phase>" --task-type "<type>" \
+  --agent-behavior "<...>" --human-correction "<...>" --rule "<...>" \
+  --applies-when "<condition>" [--applies-when "<condition>" ...] \
+  --exceptions "<condition>" --session-id "<id>" [--dry-run]
+```
+It creates an isolated git worktree off `origin/main` (never touches your current
+checkout), appends the ledger entry, patches SKILL.md if promoting, commits, pushes, and
+opens a PR via `gh` if available — otherwise it prints a ready-to-click GitHub compare URL.
+This is a hard requirement of the design: **the mechanism must not fail silently just
+because the sandbox has no `gh` CLI or GitHub token** (the common case for an agent
+session) — it degrades to "here's the URL, click to open the PR" instead of erroring out.
+
+### 7.5 Isolation Rule
+The script runs as a narrow, single-purpose worker (Tier 3) — invoke it directly; do not
+wrap it in a general-purpose sub-agent. It has no need-to-know beyond the distilled
+correction fields passed on its command line.
+
+---
+
+## Learned Constraints (self-improvement loop)
+
+Rules promoted from the correction ledger (`corrections/LEDGER.md`). Each rule is binding
+on future sessions until superseded by a later entry citing its id. Empty until the first
+correction is promoted.
