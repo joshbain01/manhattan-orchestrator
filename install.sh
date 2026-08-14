@@ -45,7 +45,7 @@ if $INSTALL_SKILL; then
   success "Skill installed: $SKILLS_DEST/SKILL.md"
 fi
 
-# ── Install agent personas ─────────────────────────────────
+# ── Install agent personas + orchestrator custom agent ─────
 if $INSTALL_AGENTS; then
   info "Installing engineering, design, and product agent personas → $AGENTS_DEST"
   mkdir -p "$AGENTS_DEST"
@@ -288,21 +288,33 @@ if $INSTALL_OPENCLAW; then
   install_openclaw_integration
 fi
 
-# ── VS Code settings reminder ─────────────────────────────
+# ── VS Code usage instructions ────────────────────────────
 echo ""
 echo "────────────────────────────────────────────────────────"
-echo "  NEXT STEP: Configure VS Code to discover the skill"
+echo "  NEXT STEP: Use it in VS Code"
 echo "────────────────────────────────────────────────────────"
 echo ""
-echo '  Open VS Code settings (Ctrl+,) → "Open Settings JSON"'
-echo '  and add (or merge) this entry:'
+echo '  1. Reload VS Code:'
+echo '       Ctrl+Shift+P → "Developer: Reload Window"'
 echo ""
-echo '  "github.copilot.chat.promptFilesLocations": ['
-echo '    "~/.agents/skills"'
-echo '  ]'
+echo '  2. In Copilot Chat (Agent mode), open the agent/mode'
+echo '     dropdown at the top of the chat input and select'
+echo '     "Manhattan Orchestrator".'
 echo ""
-echo "  Then reload VS Code and type /manhattan-orchestrator"
-echo "  in Copilot Chat to confirm the skill is active."
+echo '     In VS Code Agent mode, custom agents appear in this'
+echo '     dropdown. Prompt-file / skill slash commands do NOT'
+echo '     reliably surface there, so the custom agent is the'
+echo '     dependable entry point.'
+echo ""
+echo '  Optional — also expose the raw skill as a slash command'
+echo '  in chat modes that support it. Add to Settings JSON:'
+echo ""
+echo '       "chat.promptFilesLocations": {'
+echo '         "~/.agents/skills": true'
+echo '       }'
+echo ""
+echo '  Verify: right-click the Chat view → Diagnostics to see'
+echo '  the loaded "Manhattan Orchestrator" agent and skill.'
 echo ""
 info "Self-improvement loop: keep this repo (\"$REPO_DIR\") checked out somewhere"
 info "the orchestrator can find it — it opens PRs against corrections/LEDGER.md"
