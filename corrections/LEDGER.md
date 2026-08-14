@@ -71,3 +71,25 @@ evidence:
   occurrence_count: 1
 confidence: 1.0
 ```
+
+### CORR-2026-08-14-004
+```yaml
+id: CORR-2026-08-14-004
+status: promoted
+trigger:
+  phase: "Phase 3: Delegate / tool invocation"
+  task_type: "looking up a Jira ticket (SAP-3560) via the Atlassian MCP tools before starting ticket-driven work"
+agent_behavior: "Retried the same/closely-related Jira MCP call (getAccessibleAtlassianResources, then getJiraIssue with a user-supplied hostname) three times in a row after each was silently cancelled, without stopping to flag the pattern or offer the user an alternative path to the ticket content."
+human_correction: "so the Jira MCP is an issue. The manhattan orchestrator needs a better way to handle this so this doesnt get hung up again in the future"
+durable_rule: "When a tool call -- especially an MCP tool requiring interactive consent (e.g. Atlassian/Jira, GitHub) -- is cancelled or returns no result twice in a row for the same or a materially identical call, stop retrying. Name the exact tool/params that failed, ask the user one concise question for a workaround, and if given one, retry at most once more before stopping again on a repeat failure."
+applies_when:
+  - "A tool call is cancelled by the user/host or returns no usable result with no error message"
+  - "The same or a materially identical call is about to be attempted a 3rd consecutive time"
+exceptions:
+  - "The user explicitly asks to keep retrying the same call"
+  - "A prior attempt in the sequence already succeeded (the failure is isolated, not repeated)"
+evidence:
+  session_id: "177c5983-7a02-48c6-9503-4ddc88e985c4"
+  occurrence_count: 1
+confidence: 0.85
+```
