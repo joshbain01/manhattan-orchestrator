@@ -74,7 +74,7 @@ bash install.sh
 
 This will:
 1. Copy `skills/manhattan-orchestrator/SKILL.md` → `~/.agents/skills/manhattan-orchestrator/SKILL.md` (with your `$HOME` path substituted in)
-2. Copy all 58 `agents/engineering-*.md` files → `~/.copilot/agents/`
+2. Copy all 55 `agents/engineering-*.md` files → `~/.copilot/agents/`
 3. Copy the `manhattan-orchestrator.md` custom agent → `~/.copilot/agents/` — this is what appears in the VS Code Agent-mode dropdown (it is a plain `.md`, matching the engineering personas, so it loads via the Copilot CLI agent bridge and survives remote reconnects)
 
 ### Use it in VS Code
