@@ -38,17 +38,27 @@ It is a system designed to *fail loudly* when assumptions are wrong, and to *sur
 ```
 manhattan-orchestrator/
 ├── install.sh                                   ← one-command installer
+├── LICENSE                                      ← this repo's MIT license
+├── NOTICE.md                                    ← third-party attribution (agency-agents)
+├── scripts/
+│   └── sync-agents.sh                           ← checks vendored agents/ against upstream
 ├── skills/
 │   └── manhattan-orchestrator/
 │       ├── SKILL.md                             ← the orchestrator skill
 │       ├── OPENCLAW.md                          ← OpenClaw sessions_spawn adapter notes
 │       └── SPARK.md                             ← unvalidated LAN inference (Spark/vLLM/llama.cpp) recipe
 └── agents/
+    ├── UPSTREAM.manifest.tsv                    ← local ↔ upstream path/hash mapping
     ├── engineering-software-architect.md
     ├── engineering-backend-architect.md
     ├── engineering-sre.md
-    └── ... (55 total)
+    ├── ... (55 engineering total)
+    ├── design/       (10 specialists)
+    ├── product/      (5 specialists)
+    └── marketing/    (21 specialists)
 ```
+
+91 agent persona files total (55 engineering + 10 design + 5 product + 21 marketing).
 
 ---
 
@@ -74,7 +84,7 @@ bash install.sh
 
 This will:
 1. Copy `skills/manhattan-orchestrator/SKILL.md` → `~/.agents/skills/manhattan-orchestrator/SKILL.md` (with your `$HOME` path substituted in)
-2. Copy all 55 `agents/engineering-*.md` files → `~/.copilot/agents/`
+2. Copy all 91 `agents/engineering-*.md`, `agents/design/*.md`, `agents/product/*.md`, and `agents/marketing/*.md` files → `~/.copilot/agents/`
 3. Copy the `manhattan-orchestrator.md` custom agent → `~/.copilot/agents/` — this is what appears in the VS Code Agent-mode dropdown (it is a plain `.md`, matching the engineering personas, so it loads via the Copilot CLI agent bridge and survives remote reconnects)
 
 ### Use it in VS Code
@@ -189,6 +199,46 @@ The orchestrator can spawn any of these specialists as Tier 2 sub-agents. Each h
 | 🧱 CMS Developer | CMS (WordPress / Drupal) dev | `engineering-cms-developer.md` |
 | 📜 OrgScript Engineer | OrgScript grammar and AST | `engineering-orgscript-engineer.md` |
 | 🌐 Network Engineer | Cisco, Juniper, Palo Alto networking | `engineering-network-engineer.md` |
+
+---
+
+## The Design, Product & Marketing Divisions (36 Specialists)
+
+Beyond engineering, the orchestrator can spawn design (`agents/design/`), product
+(`agents/product/`), and marketing (`agents/marketing/`) specialists for work that
+touches UX, roadmap, or go-to-market. The Marketing Division is a curated subset of
+agency-agents' 36 marketing personas — 15 China-domestic-platform specialists
+(Baidu, Bilibili, Douyin, Kuaishou, WeChat, Weibo, Xiaohongshu, Zhihu, and similar)
+were excluded, following the same precedent as the earlier Feishu/WeChat/GaussDB
+exclusions from the Engineering Division. Add any of them back with
+`scripts/sync-agents.sh`, which reports every unvendored upstream agent.
+
+| Specialist | Domain | File |
+| :--- | :--- | :--- |
+| 🏗️ AEO Foundations Architect | llms.txt, AI-aware robots.txt, agent discovery | `marketing/marketing-aeo-foundations.md` |
+| 🤖 Agentic Search Optimizer | WebMCP readiness, agentic task completion | `marketing/marketing-agentic-search-optimizer.md` |
+| 🔮 AI Citation Strategist | AEO/GEO, AI recommendation engine visibility | `marketing/marketing-ai-citation-strategist.md` |
+| 📱 App Store Optimizer | ASO, conversion rate optimization | `marketing/marketing-app-store-optimizer.md` |
+| 📘 Book Co-Author | Thought-leadership book collaboration | `marketing/marketing-book-co-author.md` |
+| 🎠 Carousel Growth Engine | Autonomous TikTok/Instagram carousel generation | `marketing/marketing-carousel-growth-engine.md` |
+| ✍️ Content Creator | Multi-platform campaigns, editorial calendars | `marketing/marketing-content-creator.md` |
+| 📧 Email Marketing Strategist | CRM lifecycle automation, segmentation | `marketing/marketing-email-strategist.md` |
+| 🎙️ Global Podcast Strategist | Show positioning, audience growth, monetization | `marketing/marketing-global-podcast-strategist.md` |
+| 🚀 Growth Hacker | Rapid acquisition, viral loops, funnel optimization | `marketing/marketing-growth-hacker.md` |
+| 📸 Instagram Curator | Visual storytelling, aesthetic development | `marketing/marketing-instagram-curator.md` |
+| 💼 LinkedIn Content Creator | Thought leadership, personal brand | `marketing/marketing-linkedin-content-creator.md` |
+| 📣 PR & Communications Manager | Media relations, crisis comms, reputation | `marketing/marketing-pr-communications-manager.md` |
+| 💬 Reddit Community Builder | Authentic engagement, community building | `marketing/marketing-reddit-community-builder.md` |
+| 🔍 SEO Specialist | Technical SEO, link authority, organic growth | `marketing/marketing-seo-specialist.md` |
+| 🎬 Short-Video Editing Coach | CapCut/Premiere/DaVinci/Final Cut post-production | `marketing/marketing-short-video-editing-coach.md` |
+| 📣 Social Media Strategist | Cross-platform campaigns, community building | `marketing/marketing-social-media-strategist.md` |
+| 🎵 TikTok Strategist | Viral content, algorithm optimization | `marketing/marketing-tiktok-strategist.md` |
+| 🐦 Twitter Engager | Real-time engagement, thought leadership | `marketing/marketing-twitter-engager.md` |
+| 🎬 Video Optimization Specialist | YouTube algorithm, retention, syndication | `marketing/marketing-video-optimization-specialist.md` |
+| 🛰️ X/Twitter Intelligence Analyst | Social intelligence, trend detection | `marketing/marketing-x-twitter-intelligence-analyst.md` |
+
+**Design agent files:** `agents/design/*.md` (10) · **Product agent files:** `agents/product/*.md` (5) —
+see [`skills/manhattan-orchestrator/SKILL.md` §6.3](skills/manhattan-orchestrator/SKILL.md) for their per-agent selection tables.
 
 ---
 
@@ -333,6 +383,9 @@ Then configure VS Code settings on the target machine as described in [Installat
 ```bash
 rm -rf ~/.agents/skills/manhattan-orchestrator
 rm -f ~/.copilot/agents/engineering-*.md
+rm -f ~/.copilot/agents/design-*.md
+rm -f ~/.copilot/agents/product-*.md
+rm -f ~/.copilot/agents/marketing-*.md
 rm -f ~/.copilot/agents/manhattan-orchestrator.md
 ```
 
@@ -348,6 +401,29 @@ If you want to store agent files in a different location, edit `AGENTS_DEST` at 
 
 ---
 
+## Credits
+
+The 70 engineering, design, and product agent persona files in `agents/` are
+vendored verbatim from **[agency-agents](https://github.com/msitarzewski/agency-agents)**
+by msitarzewski and contributors — a much larger collection of 270+ AI agent
+personas across 17 domains. This repo curates a subset relevant to software
+engineering work and wraps it in the Manhattan Orchestrator's compartmentalized,
+verification-first playbook.
+
+If you want the full roster (marketing, sales, healthcare, GIS, security,
+game development, and more) or a point-and-click installer that keeps agents
+up to date across Claude Code, Cursor, Codex, Gemini, and others, check out
+the [agency-agents repo](https://github.com/msitarzewski/agency-agents) and
+the [Agency Agents app](https://agencyagents.app) directly.
+
+See [`NOTICE.md`](NOTICE.md) for the full third-party license text and the
+exact commit this repo last synced agent personas from. Run
+[`scripts/sync-agents.sh`](scripts/sync-agents.sh) to check for upstream
+updates.
+
+---
+
 ## License
 
-MIT
+MIT — see [`LICENSE`](LICENSE). Vendored third-party agent personas are
+MIT-licensed by their original authors; see [`NOTICE.md`](NOTICE.md).

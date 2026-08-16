@@ -99,6 +99,24 @@ Decompose the request into a dependency tree of sub-tasks and output the risk sc
 *   **High-Risk (Score 6-9):** Needs independent validation agents and strict test coverage.
 *   **Low-Risk (Score 1-3):** Can be verified with sanity checks or direct verification.
 
+### Phase 2.1: Task List Persistence (Resumability)
+For any decomposition with more than one task, or any task scored High-Risk, persist the Decompose & Risk Matrix to disk as a checklist so the effort survives an interrupted session (context reset, crashed terminal, closed IDE). Skip this for single-task, low-risk requests — the checklist would outlive the work it tracks.
+
+**Location:** `.manhattan/tasklist-<slug>.md` in the workspace root, where `<slug>` is a short kebab-case identifier derived from the Phase 1 Restatement. Create `.manhattan/` if it doesn't exist. Don't edit the workspace's `.gitignore` on your own initiative — if `.manhattan/` isn't already ignored, mention it to the user once and let them decide.
+
+**Format:**
+```markdown
+# Task List: <Task Name>
+<!-- Manhattan Orchestrator resumable task list. -->
+
+- [ ] <Piece 1> — Risk: <score> — Verification: <method> — Attempts: 0/3
+- [ ] <Piece 2> — Risk: <score> — Verification: <method> — Attempts: 0/3
+```
+
+**On every Phase 1 request**, before running the Audit, list any `.manhattan/tasklist-*.md` files that still have unchecked items — do not try to match one by slug or title guesswork, since the new request is rarely phrased like the old one. If any exist, show them to the user and ask which (if any) to resume; on resume, skip Phase 1/2 re-derivation for that list and jump straight to Phase 3 for its first unchecked task, using the persisted risk scores and verification methods. If the user starts fresh instead, archive the old file (rename with a timestamp suffix, don't delete it) and proceed normally.
+
+**Update the file** immediately after each task's box changes state: check it when the task clears Phase 4 verification; increment its attempt counter when the Verifier reports a failure (Phase 4.2 — the task list is the single source of truth for the attempt count, so write the increment there before spawning any retry). If a Wayfinder map already exists for this effort, mirror task completion into it too — the task list here doesn't replace Wayfinder, it's what covers efforts that don't have one.
+
 ### Phase 3: Subagent Archetypes & Spawning
 Define and invoke subagents based on their specialization. Never combine execution roles in a single subagent unless it is a read-only researcher.
 
@@ -115,6 +133,19 @@ Every implementation delegation must include an **Interface/Depth/Seam Brief**:
 #### Intermediate State Tagging (Need-to-Know Reporting)
 Whenever receiving output or claims from a subagent or system execution, you must tag the information in your thought logs or output in this format:
 - `[State Tag] <Claim>: [Verified Fact / Reported Fact / Assumption / Hypothesis]`
+
+### Phase 3.1: Progress Checkpoint
+Whenever Phase 3 spawns more than one subagent, emit a short checkpoint to the user after each subagent returns. Silence across multiple subagent calls until Phase 5 reads as a stall, not rigor.
+
+```markdown
+### [Progress] <Task Name>
+- **Tasks complete:** <X/N> (from the Task List / Risk Matrix)
+- **Just finished:** <Piece> — <one-line result>
+- **Next:** <Piece> — <specialist to spawn>
+- **Blockers:** <none, or what's blocking>
+```
+
+Keep it to one to three lines — this is a status line, not a report. Skip it for single-task, low-risk requests where Phase 3 → Phase 5 is effectively immediate.
 
 ### Phase 4: Independent Cross-Verification & Self-Evaluation
 
@@ -215,7 +246,13 @@ Once the Tier A + Tier B gates PASS, when an Implementer subagent reports comple
 - **Architecture Checks:** <Independent checks for interface thinness, module depth, and seam clarity>
 ```
 
-Pass the Verifier the implemented code and the original specification. Ask the Verifier to write independent tests. If the Verifier reports failures, route them back to the Implementer.
+Pass the Verifier the implemented code and the original specification. Ask the Verifier to write independent tests.
+
+**Retry policy (bounded):** If the Verifier reports failures, route them back to the Implementer with the specific failure — this is one attempt. **Maximum 3 attempts per task.** Write the incremented attempt count to the Task List (Phase 2.1) before spawning each retry, so a resumed session picks up the true count instead of restarting at 0. After attempt 3 fails:
+- Mark the task `[Blocked — 3 verification attempts exhausted]` in the Task List.
+- Do not spawn a 4th silent retry.
+- Escalate in the Phase 5 delivery: state what was tried, what the Verifier found on each attempt, and ask the user to decide (change approach / accept with caveat / drop the task) instead of continuing to loop.
+
 For medium/high-risk changes, also pass the result to an Architecture Auditor subagent that did not implement the code.
 
 #### Phase 4.3: Multi-Domain QA Panel (independent specialist sign-off before "good to go")
@@ -303,6 +340,7 @@ When delivering the final result to the user:
    - Did every empirical/live claim clear the Environment Integrity Gate (Phase 4.0), or is it clearly labeled `[Unverifiable — substrate down]`?
    - Did every user-facing claim clear the Golden-Path Slice Probe (Phase 4.1) in a real browser, or is it labeled `[Unverifiable — slice broken]` / downgraded to Hypothesis?
    - For any non-trivial/high-risk change, did the Multi-Domain QA Panel (Phase 4.3) CLEAR — no unresolved `Not-happy`, every panelist's #1 fix resolved or deferred-with-rationale, and each blocking finding independently re-verified by the orchestrator?
+   - Is every task in the Task List (Phase 2.1) either checked complete, or explicitly surfaced as `[Blocked — 3 verification attempts exhausted]` with the retry history and a decision requested from the user (Phase 4.2) — none silently dropped?
    - If the user reads only the first paragraph, is the understanding correct and calibrated?
 
 ### 5.1 Architecture Acceptance Checklist (Mandatory for code changes)
@@ -323,7 +361,7 @@ Before final delivery, the orchestrator must explicitly confirm:
 
 ## 6. Specialist Sub-Agents
 
-The Specialist roster is a collection of 70 pre-built domain expert personas available as sub-agents. When a task requires deep domain expertise, **spawn a Specialist Sub-Agent instead of a generic `general-purpose` agent**.
+The Specialist roster is a collection of 91 pre-built domain expert personas available as sub-agents. When a task requires deep domain expertise, **spawn a Specialist Sub-Agent instead of a generic `general-purpose` agent**.
 
 ### 6.1 Three-Tier Delegation Model
 
@@ -495,9 +533,36 @@ Match the task domain to the specialist. When in doubt, prefer a **narrower spec
 | Sprint planning, agile prioritization | 🎯 Sprint Prioritizer | `product-sprint-prioritizer.md` |
 | Market trends, competitive analysis | 🔭 Trend Researcher | `product-trend-researcher.md` |
 
+#### 📣 Marketing
+
+| When you need... | Use this agent | File |
+| :--- | :--- | :--- |
+| AI crawler/agent discovery infrastructure (llms.txt) | 🏗️ AEO Foundations Architect | `marketing-aeo-foundations.md` |
+| WebMCP readiness, agentic task completion audits | 🤖 Agentic Search Optimizer | `marketing-agentic-search-optimizer.md` |
+| AI recommendation engine visibility (AEO/GEO) | 🔮 AI Citation Strategist | `marketing-ai-citation-strategist.md` |
+| App Store Optimization, install conversion | 📱 App Store Optimizer | `marketing-app-store-optimizer.md` |
+| Thought-leadership book collaboration | 📘 Book Co-Author | `marketing-book-co-author.md` |
+| Autonomous TikTok/Instagram carousel generation | 🎠 Carousel Growth Engine | `marketing-carousel-growth-engine.md` |
+| Multi-platform campaigns, editorial calendars | ✍️ Content Creator | `marketing-content-creator.md` |
+| CRM lifecycle automation, email segmentation | 📧 Email Marketing Strategist | `marketing-email-strategist.md` |
+| Podcast positioning, audience growth, monetization | 🎙️ Global Podcast Strategist | `marketing-global-podcast-strategist.md` |
+| Rapid acquisition, viral loops, funnel experiments | 🚀 Growth Hacker | `marketing-growth-hacker.md` |
+| Visual storytelling, aesthetic development | 📸 Instagram Curator | `marketing-instagram-curator.md` |
+| Thought leadership, personal brand on LinkedIn | 💼 LinkedIn Content Creator | `marketing-linkedin-content-creator.md` |
+| Media relations, crisis comms, reputation | 📣 PR & Communications Manager | `marketing-pr-communications-manager.md` |
+| Authentic community engagement (Reddit) | 💬 Reddit Community Builder | `marketing-reddit-community-builder.md` |
+| Technical SEO, link authority, organic growth | 🔍 SEO Specialist | `marketing-seo-specialist.md` |
+| Short-video post-production (CapCut/Premiere/Resolve) | 🎬 Short-Video Editing Coach | `marketing-short-video-editing-coach.md` |
+| Cross-platform social campaigns, community building | 📣 Social Media Strategist | `marketing-social-media-strategist.md` |
+| Viral content, TikTok algorithm optimization | 🎵 TikTok Strategist | `marketing-tiktok-strategist.md` |
+| Real-time engagement, thread-driven thought leadership | 🐦 Twitter Engager | `marketing-twitter-engager.md` |
+| YouTube algorithm, retention, cross-platform syndication | 🎬 Video Optimization Specialist | `marketing-video-optimization-specialist.md` |
+| Social intelligence, trend detection (X/Twitter) | 🛰️ X/Twitter Intelligence Analyst | `marketing-x-twitter-intelligence-analyst.md` |
+
 **Engineering agent files:** `~/.copilot/agents/engineering-*.md`
 **Design agent files:** `~/.copilot/agents/design-*.md`
 **Product agent files:** `~/.copilot/agents/product-*.md`
+**Marketing agent files:** `~/.copilot/agents/marketing-*.md`
 
 ---
 
