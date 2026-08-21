@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Archon Ralph Workflow — Onboarding Guide</title>
+  <meta name="description" content="A concise guide to Archon's Jira-first Ralph workflow, its nodes, guardrails, and alignment with The New SDLC With Vibe Coding.">
+  <style>
+    :root {
+      --ink: #17191f;
+      --muted: #616671;
+      --paper: #fbfbfd;
+      --surface: #ffffff;
+      --line: #dfe2e8;
+      --magenta: #ed10ec;
+      --violet: #8e40c8;
+      --green: #06a978;
+      --green-soft: #e7f8f2;
+      --blue: #2463eb;
+      --blue-soft: #eaf0ff;
+      --amber: #ad6a00;
+      --amber-soft: #fff4da;
+      --red: #bd2438;
+      --red-soft: #ffeaed;
+      --navy: #111722;
+      --radius: 8px;
+      --sans: "Aptos", "Segoe UI", sans-serif;
+      --display: "Aptos Display", "Segoe UI", sans-serif;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(90deg, rgba(142, 64, 200, 0.035) 1px, transparent 1px),
+        linear-gradient(rgba(6, 169, 120, 0.035) 1px, transparent 1px),
+        var(--paper);
+      background-size: 32px 32px;
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+
+    a { color: var(--blue); }
+    code { font-family: var(--mono); font-size: 0.92em; }
+    .page { width: min(1040px, calc(100% - 64px)); margin: 0 auto; }
+
+    .hero {
+      position: relative;
+      min-height: 460px;
+      overflow: hidden;
+      color: white;
+      background: var(--navy);
+      border-bottom: 6px solid var(--green);
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(115deg, rgba(237, 16, 236, 0.23), transparent 42%),
+        linear-gradient(295deg, rgba(6, 206, 148, 0.24), transparent 48%);
+    }
+    .hero-grid {
+      position: absolute;
+      inset: 0;
+      opacity: 0.11;
+      background-image:
+        linear-gradient(rgba(255,255,255,.35) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.35) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: linear-gradient(to bottom, black, transparent 88%);
+    }
+    .hero-inner {
+      position: relative;
+      min-height: 460px;
+      display: grid;
+      grid-template-columns: 1.25fr .75fr;
+      align-items: center;
+      gap: 56px;
+      padding: 58px 0 46px;
+    }
+    .kicker, .eyebrow {
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+    }
+    .kicker { color: #7eeac8; margin-bottom: 18px; }
+    h1, h2, h3 { font-family: var(--display); letter-spacing: 0; }
+    h1 { margin: 0; max-width: 680px; font-size: clamp(44px, 5.6vw, 68px); line-height: .98; font-weight: 780; }
+    .lede { max-width: 650px; margin: 22px 0 0; color: #ccd2dc; font-size: 18px; line-height: 1.5; }
+    .hero-aside { border-left: 1px solid rgba(255,255,255,.2); padding-left: 32px; }
+    .hero-stat { padding: 18px 0; border-bottom: 1px solid rgba(255,255,255,.14); }
+    .hero-stat strong { display: block; font-size: 34px; line-height: 1; }
+    .hero-stat span { display: block; margin-top: 7px; color: #aeb7c7; font-size: 13px; }
+
+    main { padding: 58px 0 80px; }
+    section { margin: 0 0 68px; scroll-margin-top: 20px; }
+    .section-head { display: grid; grid-template-columns: 120px 1fr; gap: 28px; margin-bottom: 28px; }
+    .section-no { color: var(--violet); font-family: var(--mono); font-weight: 800; font-size: 13px; }
+    h2 { margin: 0; font-size: 34px; line-height: 1.1; }
+    .section-intro { margin: 8px 0 0; max-width: 800px; color: var(--muted); font-size: 17px; }
+
+    .callout {
+      display: grid;
+      grid-template-columns: 5px 1fr;
+      gap: 20px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .callout::before { content: ""; background: linear-gradient(var(--magenta), var(--violet), var(--green)); }
+    .callout-body { padding: 24px 26px; }
+    .callout h3 { margin: 0 0 7px; font-size: 19px; }
+    .callout p { margin: 0; color: var(--muted); }
+
+    .quick-grid, .alignment-grid, .guardrail-grid { display: grid; gap: 16px; }
+    .quick-grid { grid-template-columns: repeat(3, 1fr); margin-top: 22px; }
+    .quick-step, .guardrail {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,.92);
+    }
+    .quick-step b { display: block; margin-bottom: 10px; font-size: 15px; }
+    .quick-step .num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      margin-right: 8px;
+      color: white;
+      background: var(--violet);
+      border-radius: 50%;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+    pre {
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      color: #e9edf5;
+      background: var(--navy);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+
+    .flow-shell { padding: 28px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); }
+    .flow { display: grid; gap: 14px; }
+    .phase {
+      display: grid;
+      grid-template-columns: 145px 1fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+    .phase-label {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 16px;
+      color: white;
+      background: var(--navy);
+      border-radius: 6px;
+    }
+    .phase-label b { font-size: 14px; }
+    .phase-label span { color: #aeb7c7; font-family: var(--mono); font-size: 10px; margin-top: 5px; }
+    .nodes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+    .node {
+      min-height: 74px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-top: 4px solid var(--blue);
+      border-radius: 6px;
+      background: #fff;
+    }
+    .node strong { display: block; font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+    .node span { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .node.ai { border-top-color: var(--violet); }
+    .node.gate { border-top-color: var(--green); background: var(--green-soft); }
+    .node.risk { border-top-color: var(--amber); background: var(--amber-soft); }
+    .node.publish { border-top-color: var(--magenta); background: #fdeffd; }
+    .fork { position: relative; padding: 12px 0; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+    .fork::before, .fork::after { content: ""; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--line); }
+    .fork::before { left: 0; } .fork::after { right: 0; }
+    .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; color: var(--muted); font-size: 12px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; }
+
+    .alignment-grid { grid-template-columns: repeat(2, 1fr); }
+    .alignment {
+      display: grid;
+      grid-template-columns: 50px 1fr;
+      gap: 14px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .alignment .mark {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      color: white;
+      background: var(--violet);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-weight: 800;
+    }
+    .alignment h3 { margin: 0 0 5px; font-size: 17px; }
+    .alignment p { margin: 0; color: var(--muted); font-size: 13px; }
+    .paper-quote { margin-top: 20px; padding: 24px 28px; color: white; background: var(--navy); border-radius: var(--radius); }
+    .paper-quote blockquote { margin: 0; font-size: 20px; line-height: 1.4; }
+    .paper-quote cite { display: block; margin-top: 12px; color: #9ba6b8; font-style: normal; font-size: 12px; }
+
+    .guardrail-grid { grid-template-columns: repeat(3, 1fr); }
+    .guardrail .eyebrow { color: var(--green); }
+    .guardrail h3 { margin: 8px 0 6px; font-size: 17px; }
+    .guardrail p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    table { width: 100%; border-collapse: collapse; background: var(--surface); font-size: 13px; }
+    th, td { padding: 13px 15px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: white; background: var(--navy); font-family: var(--mono); font-size: 11px; }
+    tr:nth-child(even) td { background: #f6f7f9; }
+    .status { font-weight: 700; color: var(--green); }
+    .caveat { color: var(--amber); font-weight: 700; }
+
+    .footer { padding: 26px 0 50px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .footer-row { display: flex; justify-content: space-between; gap: 24px; }
+
+    @media (max-width: 800px) {
+      .page { width: min(100% - 24px, 1040px); }
+      .hero-inner, .section-head { grid-template-columns: 1fr; }
+      .hero-aside { border-left: 0; border-top: 1px solid rgba(255,255,255,.2); padding: 24px 0 0; }
+      .quick-grid, .alignment-grid, .guardrail-grid { grid-template-columns: 1fr; }
+      .phase { grid-template-columns: 1fr; }
+      .nodes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media print {
+      @page { size: letter; margin: 0.45in; }
+      body { background: white; font-size: 10pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .page { width: 100%; }
+      .hero { min-height: 9.95in; break-after: page; }
+      .hero-inner {
+        min-height: 9.9in;
+        grid-template-columns: 1.35fr .65fr;
+        gap: .35in;
+        padding: .52in .36in;
+      }
+      .hero-aside {
+        border-top: 0;
+        border-left: 1px solid rgba(255,255,255,.2);
+        padding: 0 0 0 .24in;
+      }
+      .hero-stat { padding: .12in 0; }
+      .hero-stat strong { font-size: 22pt; }
+      .hero-stat span { margin-top: 3px; font-size: 7.5pt; }
+      h1 { max-width: none; font-size: 34pt; line-height: 1; }
+      .lede { margin-top: .16in; font-size: 10.5pt; line-height: 1.4; }
+      .kicker { margin-bottom: .12in; font-size: 7.5pt; }
+      main { padding: 0; }
+      section { margin: 0 0 28px; }
+      .page-break { break-before: page; }
+      .avoid-break, .callout, .quick-step, .alignment, .guardrail, .phase, table { break-inside: avoid; }
+      .flow-shell { padding: 15px; }
+      .phase { grid-template-columns: 105px 1fr; gap: 8px; margin-bottom: 7px; }
+      .nodes { grid-template-columns: repeat(4, 1fr); gap: 5px; }
+      .node { min-height: 55px; padding: 7px; }
+      .node strong { font-size: 7.5pt; }
+      .node span { font-size: 7pt; }
+      .phase-label { padding: 8px; }
+      .phase-label b { font-size: 8pt; }
+      .phase-label span { font-size: 6.5pt; }
+      .section-head { grid-template-columns: 72px 1fr; gap: 12px; }
+      h2 { font-size: 20pt; }
+      .section-intro { font-size: 10pt; }
+      .quick-grid { grid-template-columns: repeat(3, 1fr); }
+      .alignment-grid { grid-template-columns: repeat(2, 1fr); }
+      .guardrail-grid { grid-template-columns: repeat(3, 1fr); }
+      .quick-step, .alignment, .guardrail { padding: 12px; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-grid"></div>
+    <div class="page hero-inner">
+      <div>
+        <div class="kicker">Archon Field Guide · Ralph DAG</div>
+        <h1>From Jira intent to reviewed code.</h1>
+        <p class="lede">A short onboarding guide to Archon’s Jira-first agentic engineering workflow: how work enters, how agents implement it, and why code cannot reach a pull request before deterministic and independent QA gates pass.</p>
+      </div>
+      <aside class="hero-aside" aria-label="Workflow summary">
+        <div class="hero-stat"><strong>31</strong><span>workflow nodes, including conditional paths</span></div>
+        <div class="hero-stat"><strong>1</strong><span>authorized push point, after all QA</span></div>
+        <div class="hero-stat"><strong>3</strong><span>independent QA specialists</span></div>
+        <div class="hero-stat"><strong>2</strong><span>evidence layers: build baseline + browser suite</span></div>
+      </aside>
+    </div>
+  </header>
+
+  <main class="page">
+    <section>
+      <div class="section-head">
+        <div class="section-no">01 / START</div>
+        <div>
+          <h2>The 90-second mental model</h2>
+          <p class="section-intro">Jira is the specification. Archon decomposes it into child stories, works in an isolated branch, verifies the result through code and browser evidence, then publishes exactly once.</p>
+        </div>
+      </div>
+
+      <div class="callout avoid-break">
+        <div class="callout-body">
+          <h3>The factory, not just the model</h3>
+          <p>The model writes code. The workflow supplies the production system around it: context, isolation, risk classification, tests, independent reviewers, constrained git operations, and a feedback loop.</p>
+        </div>
+      </div>
+
+      <div class="quick-grid">
+        <article class="quick-step"><b><span class="num">1</span>Provide the ticket</b><p>Start the workflow with a Jira key. Archon fetches the canonical ticket fields and acceptance criteria.</p></article>
+        <article class="quick-step"><b><span class="num">2</span>Let the DAG run</b><p>Archon creates child stories, syncs with main, explores the interfaces, implements, tests, and convenes QA.</p></article>
+        <article class="quick-step"><b><span class="num">3</span>Review the evidence</b><p>The PR appears only after QA clears. Jira receives the PR URL and calibrated completion report.</p></article>
+      </div>
+
+      <pre aria-label="Example workflow command">bun packages/cli/src/cli.ts workflow run archon-ralph-dag \
+  --cwd /path/to/product-repo \
+  --branch SAP-3560-voice-health \
+  "SAP-3560"</pre>
+    </section>
+
+    <section class="page-break">
+      <div class="section-head">
+        <div class="section-no">02 / MAP</div>
+        <div>
+          <h2>The workflow at a glance</h2>
+          <p class="section-intro">The map below shows the major execution path. The first stage forks: Jira-backed work avoids a narrative PRD and creates child tickets directly; free-text work retains the PRD fallback.</p>
+        </div>
+      </div>
+
+      <div class="flow-shell">
+        <div class="flow">
+          <div class="phase">
+            <div class="phase-label"><b>Input</b><span>parallel grounding</span></div>
+            <div class="nodes">
+              <div class="node ai"><strong>detect-input</strong><span>Choose Jira, existing state, file, or idea path.</span></div>
+              <div class="node gate"><strong>fetch-jira-context</strong><span>Fetch canonical fields and scenario count.</span></div>
+            </div>
+          </div>
+          <div class="fork">Jira-first path or fallback path</div>
+          <div class="phase">
+            <div class="phase-label"><b>Decompose</b><span>conditional paths</span></div>
+            <div class="nodes">
+              <div class="node ai"><strong>decompose-from-jira</strong><span>Turn ticket ACs into risk-scored stories.</span></div>
+              <div class="node gate"><strong>write-jira-state</strong><span>Create child tickets and minimal local state.</span></div>
+              <div class="node ai"><strong>generate-prd</strong><span>Fallback for idea/file inputs.</span></div>
+              <div class="node"><strong>write-prd-files</strong><span>Fallback state only; not product code.</span></div>
+              <div class="node"><strong>write-jira-stories</strong><span>Create child tickets from fallback state.</span></div>
+            </div>
+          </div>
+          <div class="phase">
+            <div class="phase-label"><b>Prepare</b><span>before coding</span></div>
+            <div class="nodes">
+              <div class="node gate"><strong>validate-prd</strong><span>Schema and Jira AC completeness checks.</span></div>
+              <div class="node gate"><strong>sync-with-main</strong><span>Merge latest main before implementation.</span></div>
+              <div class="node gate"><strong>check-environment</strong><span>Partial Tier A: toolchain and baseline build.</span></div>
+              <div class="node ai"><strong>explore</strong><span>Read-only interface catalog and lessons.</span></div>
+            </div>
+          </div>
+          <div class="phase">
+            <div class="phase-label"><b>Build</b><span>isolated worktree</span></div>
+            <div class="nodes">
+              <div class="node ai"><strong>implement</strong><span>One child story per fresh-context iteration.</span></div>
+              <div class="node gate"><strong>finalize-local</strong><span>Hooks block unsafe staging and secrets.</span></div>
+              <div class="node gate"><strong>pre-push-clean</strong><span>Fail on branch-local .archon changes; delete nothing.</span></div>
+            </div>
+          </div>
+          <div class="phase">
+            <div class="phase-label"><b>Verify</b><span>deterministic gates</span></div>
+            <div class="nodes">
+              <div class="node gate"><strong>run-tests</strong><span>Run make and package test suites.</span></div>
+              <div class="node gate"><strong>visual-qa</strong><span>Partial Tier B: browser suite; silence fails.</span></div>
+              <div class="node gate"><strong>architecture-audit</strong><span>No-op props, interface width, trajectory.</span></div>
+              <div class="node gate"><strong>scope-check</strong><span>Hard allowed-path and file-type fence.</span></div>
+            </div>
+          </div>
+          <div class="phase">
+            <div class="phase-label"><b>Review</b><span>double blind</span></div>
+            <div class="nodes">
+              <div class="node ai"><strong>verification-plan</strong><span>Name claim, method, and architecture checks.</span></div>
+              <div class="node ai"><strong>qa-review-frontend</strong><span>Visible behavior and browser coverage.</span></div>
+              <div class="node ai"><strong>qa-review-code</strong><span>Correctness, constraints, and test coverage.</span></div>
+              <div class="node ai"><strong>qa-review-arch</strong><span>Depth, interfaces, and seam intent.</span></div>
+              <div class="node gate"><strong>qa-synthesize</strong><span>Block any unresolved Not-happy verdict.</span></div>
+              <div class="node risk"><strong>devil-advocate</strong><span>Try to disconfirm the panel’s conclusion.</span></div>
+              <div class="node risk"><strong>stuck-diagnosis</strong><span>Conditional human escalation for the last 20%.</span></div>
+            </div>
+          </div>
+          <div class="phase">
+            <div class="phase-label"><b>Publish</b><span>only after QA</span></div>
+            <div class="nodes">
+              <div class="node gate"><strong>verify-qa-completeness</strong><span>Cross-check reviewed and passed criteria against Jira.</span></div>
+              <div class="node gate"><strong>publication-gate</strong><span>Require complete QA and panel_holds.</span></div>
+              <div class="node publish"><strong>push-and-pr</strong><span>The only authorized remote push.</span></div>
+              <div class="node"><strong>update-jira</strong><span>Post verdict and PR URL.</span></div>
+              <div class="node"><strong>report</strong><span>Calibrated final evidence summary.</span></div>
+              <div class="node ai"><strong>append-lessons</strong><span>Feed failures into the next run.</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="legend" aria-label="Node legend">
+          <span><i style="background:var(--violet)"></i>Agent judgment</span>
+          <span><i style="background:var(--green)"></i>Deterministic gate</span>
+          <span><i style="background:var(--amber)"></i>Risk/escalation</span>
+          <span><i style="background:var(--magenta)"></i>Remote publication</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="page-break">
+      <div class="section-head">
+        <div class="section-no">03 / PAPER</div>
+        <div>
+          <h2>How it aligns with “The New SDLC With Vibe Coding”</h2>
+          <p class="section-intro">The white paper’s central claim is that production quality comes from the harness around the model. Ralph implements that claim as executable workflow policy.</p>
+        </div>
+      </div>
+
+      <div class="alignment-grid">
+        <article class="alignment"><div class="mark">01</div><div><h3>Factory model</h3><p>The developer designs the production line; agents produce code; gates verify it. Ralph makes the assembly line explicit as a DAG.</p></div></article>
+        <article class="alignment"><div class="mark">02</div><div><h3>Context engineering</h3><p>Jira, repository rules, interface catalogs, risk briefs, and prior lessons are loaded where they are needed, not blindly everywhere.</p></div></article>
+        <article class="alignment"><div class="mark">03</div><div><h3>Harness engineering</h3><p>Worktrees, bounded tools, git hooks, test runners, browser probes, specialist handoffs, and logs surround the model with enforceable constraints.</p></div></article>
+        <article class="alignment"><div class="mark">04</div><div><h3>Tests plus evals</h3><p>Tests verify deterministic behavior. The QA panel, architecture review, and devil’s advocate evaluate non-deterministic quality and intent. The browser contract is not yet a full sentinel-data proof.</p></div></article>
+        <article class="alignment"><div class="mark">05</div><div><h3>Trajectory evaluation</h3><p>The implementation emits a trajectory record. The architecture audit checks whether component reads, builds, and explicit staging actually happened.</p></div></article>
+        <article class="alignment"><div class="mark">06</div><div><h3>Continuous quality flywheel</h3><p>Findings are appended to home-scoped lessons. Future exploration loads those failures as dynamic context so mistakes compound into safeguards.</p></div></article>
+        <article class="alignment"><div class="mark">07</div><div><h3>The 80% problem</h3><p>A questionable verdict triggers a structured stuck diagnosis: root cause, minimal human intervention, and a reusable lesson.</p></div></article>
+        <article class="alignment"><div class="mark">08</div><div><h3>Orchestrator mode</h3><p>Specialists operate asynchronously with narrow roles. The implementer never serves as its own final verifier.</p></div></article>
+      </div>
+
+      <div class="paper-quote avoid-break">
+        <blockquote>“The developer’s primary output is not code — it’s the system that produces code.”</blockquote>
+        <cite>The New SDLC With Vibe Coding, “The factory model,” May 2026</cite>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div class="section-no">04 / SAFETY</div>
+        <div>
+          <h2>The guardrails that matter most</h2>
+          <p class="section-intro">These controls prevent the recurring failure classes that motivated the workflow: wrong scope, false-green UI tests, assumptions about component APIs, and premature publication.</p>
+        </div>
+      </div>
+
+      <div class="guardrail-grid">
+        <article class="guardrail"><div class="eyebrow">Source control</div><h3>Product files only</h3><p>Explicit staging, blocked broad-add patterns, forbidden file classes, and a final scope check prevent workflow state, docs, images, and unrelated edits from reaching the PR.</p></article>
+        <article class="guardrail"><div class="eyebrow">Architecture</div><h3>Read before write</h3><p>The Explorer catalogs real component signatures, rendered children, and context dependencies. The auditor independently traces no-op props and interface growth.</p></article>
+        <article class="guardrail"><div class="eyebrow">Evidence</div><h3>No silent skip</h3><p>Missing browser configuration is a failure. The present gate requires content-oriented assertions, but a full known-sentinel, empty-state, console, and network contract remains to be implemented.</p></article>
+        <article class="guardrail"><div class="eyebrow">Independence</div><h3>Three-domain panel</h3><p>Frontend, code, and architecture reviewers each synthesize deterministic evidence and add domain judgment. One Not-happy result blocks publication.</p></article>
+        <article class="guardrail"><div class="eyebrow">Risk</div><h3>U × I classification</h3><p>Every child story records uncertainty, impact, risk score, architecture trigger, and named interface seam. High-risk changes receive stricter review.</p></article>
+        <article class="guardrail"><div class="eyebrow">Publication</div><h3>One push point</h3><p>The remote branch and PR are created only after tests, browser evidence, architecture audit, scope check, panel synthesis, and disconfirmation review.</p></article>
+      </div>
+    </section>
+
+    <section class="page-break">
+      <div class="section-head">
+        <div class="section-no">05 / OPERATE</div>
+        <div>
+          <h2>How to run and supervise it</h2>
+          <p class="section-intro">Treat the workflow as a governed production process. Start with a well-formed ticket, watch gate outputs rather than prose confidence, and intervene only when the workflow presents a concrete escalation.</p>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>Moment</th><th>What to inspect</th><th>Healthy signal</th><th>Stop signal</th></tr></thead>
+        <tbody>
+          <tr><td>Ticket intake</td><td>Acceptance criteria, constraints, target behavior</td><td class="status">Specific, testable scenarios</td><td class="caveat">Ambiguous business rule or missing data source</td></tr>
+          <tr><td>Decomposition</td><td>Child ticket risk, seam, allowed paths</td><td class="status">Each story is independently implementable</td><td class="caveat">One story spans unrelated modules</td></tr>
+          <tr><td>Implementation</td><td>Trajectory record and commit scope</td><td class="status">Component reads, build checks, explicit staging</td><td class="caveat">Broad git add, unexplained new dependency</td></tr>
+          <tr><td>Evidence gates</td><td>Test output and browser assertions</td><td class="status">Known value rendered; empty state absent</td><td class="caveat">Skipped test, stale data, title-only browser check</td></tr>
+          <tr><td>QA panel</td><td>Three verdicts and top fixes</td><td class="status">No unresolved Not-happy</td><td class="caveat">Any top fix unresolved or unowned</td></tr>
+          <tr><td>Publication</td><td>PR file list and Jira linkage</td><td class="status">Only allowed product files</td><td class="caveat"><code>.archon/</code>, docs, images, or unrelated files</td></tr>
+        </tbody>
+      </table>
+
+      <div class="quick-grid" style="margin-top:22px">
+        <article class="quick-step"><b>Inspect a run</b><pre>bun run cli workflow get &lt;run-id&gt; --verbose</pre></article>
+        <article class="quick-step"><b>Resume after a fix</b><pre>bun run cli workflow resume &lt;run-id&gt;</pre></article>
+        <article class="quick-step"><b>Discard unsafe work</b><pre>bun run cli workflow abandon &lt;run-id&gt;</pre></article>
+      </div>
+    </section>
+
+    <section class="page-break">
+      <div class="section-head">
+        <div class="section-no">06 / GAPS</div>
+        <div>
+          <h2>Current limits and next hardening steps</h2>
+          <p class="section-intro">Ralph is aligned with the paper’s harness model, but several controls are still partial. These are operational gaps, not reasons to ignore the evidence already produced.</p>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>Current control</th><th>What it proves today</th><th>What it does not yet prove</th><th>Recommended hardening</th></tr></thead>
+        <tbody>
+          <tr><td><code>check-environment</code></td><td>Required tools exist and the baseline package can build.</td><td>Services are live, containers are not crash-looping, and the exact database/index is fresh and non-empty.</td><td>Add project-declared readiness and data-truth commands, including two-sample restart checks.</td></tr>
+          <tr><td><code>visual-qa</code></td><td>A Playwright suite exists, runs, and contains content-oriented assertions.</td><td>A seeded known value is visible, the empty state is absent, and no console or HTTP ≥400 errors occurred.</td><td>Adopt a standard golden-path fixture contract and shared Playwright instrumentation.</td></tr>
+          <tr><td>Trajectory audit</td><td>The implementer reports required reads, builds, and staging commands.</td><td>The report matches the actual tool-call log.</td><td>Derive trajectory facts from workflow events or provider tool traces instead of self-report.</td></tr>
+          <tr><td>QA remediation loop</td><td>Any Not-happy, unresolved top fix, incomplete coverage, or questionable devil verdict blocks publication.</td><td>The workflow does not yet route every blocked verdict into a fresh corrective implementer automatically.</td><td>Add a bounded correction loop that preserves reviewer independence and reruns the same gates.</td></tr>
+          <tr><td><code>append-lessons</code></td><td>Successful runs can persist review findings for future exploration.</td><td>Runs that fail before the report node do not append lessons.</td><td>Use a terminal hook or failure branch that records lessons for every terminal status.</td></tr>
+          <tr><td>Jira child creation</td><td>Stories are mapped into child tickets with risk and seam context.</td><td>Retry idempotency and duplicate prevention are not transactional guarantees.</td><td>Store a deterministic story key/label and reconcile before creating a child.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <div class="section-no">07 / LIMITS</div>
+        <div>
+          <h2>What remains human</h2>
+          <p class="section-intro">Archon reduces review effort; it does not remove accountability. Architecture trade-offs, ambiguous product intent, and deployment approval remain human decisions.</p>
+        </div>
+      </div>
+      <div class="callout avoid-break">
+        <div class="callout-body">
+          <h3>Read the report as calibrated evidence</h3>
+          <p>Deterministic gate results are verified facts. Agent reviews are reported facts until reproduced. A devil’s-advocate conclusion is a hypothesis. The report labels these separately so confidence does not outrun evidence.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="page footer-row">
+      <span>Archon Ralph Workflow · Onboarding Guide</span>
+      <span>Source: <code>.archon/workflows/defaults/archon-ralph-dag.yaml</code> · White paper: Day_1_v3.pdf</span>
+    </div>
+  </footer>
+</body>
+</html>

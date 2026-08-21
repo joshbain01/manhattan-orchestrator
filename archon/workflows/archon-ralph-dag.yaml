@@ -1,0 +1,2255 @@
+name: archon-ralph-dag
+provider: pi
+model: medium
+description: |
+  Use when: User wants to run a Ralph implementation loop.
+  Triggers: "ralph", "run ralph", "ralph dag", "run ralph dag".
+
+  DAG workflow that:
+  1. Detects input: existing prd.json, existing prd.md (needs stories), or raw idea
+  2. Generates prd.md + prd.json if needed (explores codebase, breaks into stories)
+  3. Validates PRD files, reads project context, installs dependencies
+  4. Runs Ralph loop (fresh context per iteration) implementing one story per iteration
+  5. Creates PR and reports completion
+
+  Accepts: An idea description, a path to an existing prd.md, or a directory with prd.md + prd.json
+
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 1: DETECT INPUT
+  # Determines what the user provided: full PRD, partial PRD, or idea
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: detect-input
+    model: small
+    prompt: |
+      # Detect Ralph Input
+
+      **User input**: $ARGUMENTS
+
+      ## Step 1: Jira key check (highest priority — do this FIRST)
+
+      Scan the input for a Jira issue key pattern: uppercase letters followed by a
+      dash and digits (e.g., `SAP-3560`, `PROJ-123`).
+
+      If a key is found:
+      ```bash
+      printf 'base=%s email=%s token=%s\n' \
+        "${JIRA_BASE_URL:+SET}" "${JIRA_EMAIL:+SET}" "${JIRA_API_TOKEN:+SET}"
+      ```
+      If all three Jira variables are set and non-empty, output `jira_backed` immediately.
+      **Stop here.** The Jira ticket is the spec; no PRD file classification needed.
+
+      If any Jira variable is missing, STOP with an error. Never reinterpret a Jira
+      issue key as a free-text idea; that would allow implementation without the
+      authoritative ticket contents.
+
+      ## Step 2: Detect worktree (only if not jira_backed)
+
+      Run `git worktree list --porcelain`. If multiple entries, you are in a
+      worktree — save the main repo root path for file lookups below.
+
+      ## Step 3: Classify the input (only if not jira_backed)
+
+      **Case A — Ralph directory path** (contains `.archon/ralph/`):
+      Check if both `prd.json` and `prd.md` exist. If yes → output `ready`.
+
+      **Case B — File path** (ends in `.md`):
+      Find the file, confirm it is a PRD, copy it to `.archon/ralph/{slug}/prd.md`,
+      output `external_prd`.
+
+      **Case C — Free text** (no Jira key, no file path):
+      Check for existing `.archon/ralph/prd.json`; if none → output `needs_generation`.
+
+      ## Hard rules
+      - Only output `ready` when a REAL `prd.json` with a non-empty `userStories`
+        array exists on disk. Never guess.
+      - `jira_backed` requires a detected key plus JIRA_BASE_URL, JIRA_EMAIL,
+        and JIRA_API_TOKEN. Missing credentials are a hard error.
+      - `prd_dir` is empty for `jira_backed` — the issue key is the reference.
+
+      ## Output
+      ```json
+      {"input_type": "jira_backed|ready|external_prd|needs_generation",
+       "prd_dir": ".archon/ralph/{slug-or-empty}",
+       "issue_key": "SAP-3560-or-empty"}
+      ```
+    output_format:
+      type: object
+      properties:
+        input_type:
+          type: string
+          enum: [jira_backed, ready, external_prd, needs_generation]
+        prd_dir:
+          type: string
+        issue_key:
+          type: string
+      required: [input_type, prd_dir]
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 1b: FETCH REAL JIRA CONTEXT (deterministic ground truth)
+  # Runs unconditionally, in parallel with detect-input. If the input
+  # message names a Jira issue key AND JIRA_* env vars are configured for
+  # this codebase, fetches the REAL ticket's fields directly via REST and
+  # counts its Gherkin "Scenario:" blocks. This is the ground truth used
+  # later to (a) block a PRD that under-scopes the real ticket
+  # (validate-prd), and (b) deterministically cross-check the qa-review
+  # verdict before anything is posted to Jira (verify-qa-completeness) —
+  # see Bug #20: a PRD that only captured 1 of 10 real acceptance criteria
+  # let an independent-sounding "PASS (4/4)" verdict reach the real ticket.
+  # Jira-key runs fail closed when credentials, fetch, or JSON parsing fail.
+  # Non-Jira idea/file runs still emit SCENARIO_COUNT=0 and continue.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: fetch-jira-context
+    bash: |
+      set -uo pipefail
+      _MSG="$USER_MESSAGE"
+      ISSUE_KEY=$(printf '%s' "$_MSG" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      if [ -z "$ISSUE_KEY" ]; then
+        echo "NO_ISSUE_KEY=1"
+        echo "SCENARIO_COUNT=0"
+        exit 0
+      fi
+      echo "ISSUE_KEY=$ISSUE_KEY"
+      if [ -z "${JIRA_BASE_URL:-}" ] || [ -z "${JIRA_EMAIL:-}" ] || [ -z "${JIRA_API_TOKEN:-}" ]; then
+        echo "ERROR: Jira issue key found but JIRA_BASE_URL/JIRA_EMAIL/JIRA_API_TOKEN are not all configured."
+        exit 1
+      fi
+        RESP=$(ISSUE_KEY="$ISSUE_KEY" python3 - << 'PYEOF'
+        import base64, os, urllib.request
+        auth = base64.b64encode(
+          f"{os.environ['JIRA_EMAIL']}:{os.environ['JIRA_API_TOKEN']}".encode()
+        ).decode()
+        request = urllib.request.Request(
+          f"{os.environ['JIRA_BASE_URL'].rstrip('/')}/rest/api/3/issue/{os.environ['ISSUE_KEY']}?fields=*all",
+          headers={"Authorization": f"Basic {auth}", "Accept": "application/json"},
+        )
+        try:
+          with urllib.request.urlopen(request) as response:
+            print(response.read().decode())
+        except Exception as error:
+          raise SystemExit(f"Jira fetch failed: {error}")
+        PYEOF
+        )
+      if [ -z "$RESP" ]; then
+        echo "ERROR: Jira returned no ticket data for $ISSUE_KEY."
+        exit 1
+      fi
+      if ! printf '%s' "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); assert isinstance(d.get('fields'),dict)" 2>/dev/null; then
+        echo "ERROR: Jira response for $ISSUE_KEY is not valid issue JSON with fields."
+        exit 1
+      fi
+      SCENARIO_COUNT=$(printf '%s' "$RESP" | grep -o 'Scenario:' | wc -l | tr -d ' ')
+      echo "SCENARIO_COUNT=${SCENARIO_COUNT:-0}"
+      echo "=== JIRA_FIELDS_START ==="
+      printf '%s' "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('fields',{}))[:6000])" 2>/dev/null || echo "(could not parse Jira response as JSON)"
+      echo "=== JIRA_FIELDS_END ==="
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 2: GENERATE PRD
+  # Scenario 1: User has an idea → generate prd.md + prd.json
+  # Scenario 2: User has prd.md → generate prd.json with stories
+  # Skipped if prd.json already exists
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: generate-prd
+    depends_on: [detect-input, fetch-jira-context]
+    when: "$detect-input.output.input_type != 'ready' and $detect-input.output.input_type != 'jira_backed'"
+    command: archon-ralph-generate
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        slug:
+          type: string
+          description: "kebab-case feature slug"
+        prd_dir:
+          type: string
+          description: "relative path like .archon/ralph/my-feature"
+        prd_md:
+          type: string
+          description: "full contents of prd.md"
+        prd_json:
+          type: object
+          description: "the prd.json content as a native JSON object (NOT a stringified/escaped blob — nesting a JSON string inside JSON is fragile for structured-output generation)"
+          properties:
+            project:
+              type: string
+            branchName:
+              type: string
+            prdFile:
+              type: string
+            description:
+              type: string
+            userStories:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  description:
+                    type: string
+                  acceptanceCriteria:
+                    type: array
+                    items:
+                      type: string
+                  technicalNotes:
+                    type: string
+                  dependsOn:
+                    type: array
+                    items:
+                      type: string
+                  priority:
+                    type: number
+                  uncertainty:
+                    type: number
+                    description: "1=low 2=medium 3=high — how unknown the implementation path is"
+                  impact:
+                    type: number
+                    description: "1=low 2=medium 3=high — user-facing value or risk this story carries"
+                  riskScore:
+                    type: number
+                    description: "uncertainty x impact (1-9); auto-set: >=6 = high-risk"
+                  archRiskTrigger:
+                    type: boolean
+                    description: "true if riskScore>=6 OR story touches a public component interface/export"
+                  interfaceSeam:
+                    type: string
+                    description: "The exact integration boundary (e.g. 'MetricTooltip props API', 'LocationCard children slot')"
+                  passes:
+                    type: boolean
+                  notes:
+                    type: string
+                required: [id, title, description, acceptanceCriteria, dependsOn, priority, uncertainty, impact, riskScore, archRiskTrigger, interfaceSeam, passes]
+            allowedPaths:
+              type: array
+              description: "Glob patterns for every file path this feature is allowed to touch."
+              items:
+                type: string
+            architectureGuardrails:
+              type: object
+              description: "Manhattan Interface/Depth/Seam Brief — passed verbatim to the Implementer node"
+              properties:
+                interfaceBudget:
+                  type: string
+                  description: "Max allowed public API surface expansion (e.g. 'zero new exports outside allowedPaths')"
+                depthGoal:
+                  type: string
+                  description: "Complexity to be internalized inside the module, not scattered at call sites"
+                seamContract:
+                  type: string
+                  description: "Named boundary for integration, injection, and test isolation"
+              required: [interfaceBudget, depthGoal, seamContract]
+          required: [project, branchName, prdFile, userStories, allowedPaths, architectureGuardrails]
+      required: [slug, prd_dir, prd_md, prd_json]
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 2b: WRITE PRD FILES
+  # Takes the structured JSON output from generate-prd and writes
+  # prd.md + prd.json to disk, then commits them.
+  # Skipped if generate-prd was skipped.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: write-prd-files
+    depends_on: [generate-prd]
+    when: "$detect-input.output.input_type != 'ready' and $detect-input.output.input_type != 'jira_backed'"
+    bash: |
+      set -e
+      _GPRD=$generate-prd.output
+      # prd_json is a native JSON object in the node's structured output (not a
+      # double-encoded string — see #Bug-16) — no re-parse/validate needed for
+      # its own validity, the outer schema already enforced that. Just re-emit
+      # it with json.dump so prd.json on disk is well-formed either way.
+      PRD_DIR=$(printf '%s' "$_GPRD" | python3 -c "import sys,json,os;d=json.loads(sys.stdin.read());pd=d['prd_dir'];os.makedirs(pd,exist_ok=True);open(pd+'/prd.md','w').write(d['prd_md']);json.dump(d['prd_json'],open(pd+'/prd.json','w'),indent=2);print(pd)")
+      if [ -z "$PRD_DIR" ]; then
+        echo 'ERROR: write-prd-files: Python returned empty prd_dir'
+        exit 1
+      fi
+      # .archon/ files are intentionally NOT committed to the product branch.
+      # They live on disk in the worktree so the implement loop can read them,
+      # but they must never appear in a product PR. pre-push-clean enforces this.
+      echo "$PRD_DIR"
+
+  # ═════════════════════════════════════════════════════════════
+  # NODE 2b-ALT: DECOMPOSE FROM JIRA (jira_backed fast path)
+  # Jira is the spec. Reads ticket fields directly from fetch-jira-context,
+  # decomposes ACs into user stories with U×I risk scoring, seams, and
+  # architecture guardrails. NO prd.md written. The Jira child tickets
+  # (created by write-jira-state) are the canonical story store.
+  # Only runs when detect-input emits jira_backed.
+  # ═════════════════════════════════════════════════════════════
+  - id: decompose-from-jira
+    depends_on: [detect-input, fetch-jira-context]
+    when: "$detect-input.output.input_type == 'jira_backed'"
+    context: fresh
+    prompt: |
+      # Decompose Jira Ticket into User Stories
+
+      The Jira ticket IS the spec. Your job: read the ticket fields and
+      decompose its acceptance criteria into implementable user stories
+      following the Manhattan framework (U×I risk, seams, guardrails).
+      **No prd.md. No narrative document.** The Jira child tickets you
+      define here will be created in Jira by the next node.
+
+      ## Jira Ticket Context
+      $fetch-jira-context.output
+
+      ## Codebase Context
+      ```bash
+      # Read the user message to understand target files
+      echo "$USER_MESSAGE"
+      # Explore the codebase to understand the component interfaces
+      # and file structure relevant to this ticket
+      ls apps/ 2>/dev/null | head -10
+      ```
+
+      ## Your Task
+
+      1. Parse every acceptance criterion from the Jira ticket fields
+         (look in `description`, `customfield_*`, and any `Scenario:` blocks)
+      2. Group criteria into logical user stories (1-7 stories typical)
+      3. For each story assign:
+         - `uncertainty` (1-3): how unknown is the implementation path?
+         - `impact` (1-3): how much user-facing value or risk?
+         - `riskScore` = uncertainty × impact
+         - `archRiskTrigger` = true if riskScore ≥ 6 OR story touches a public component interface
+         - `interfaceSeam` = the exact integration boundary (e.g. “MetricTooltip props API”)
+      4. Define `allowedPaths` (file globs the implementation may touch)
+      5. Define `architectureGuardrails`:
+         - `interfaceBudget`: max new exports allowed outside allowedPaths
+         - `depthGoal`: where complexity must live (hooks/helpers, not inline JSX)
+         - `seamContract`: named integration boundary + test isolation point
+
+      Output ONLY the JSON object below — no prd.md, no narrative:
+    output_format:
+      type: object
+      properties:
+        issue_key:
+          type: string
+          description: "The Jira issue key (e.g. SAP-3560)"
+        slug:
+          type: string
+          description: "kebab-case slug derived from the issue key (e.g. sap-3560)"
+        userStories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              description: { type: string }
+              acceptanceCriteria:
+                type: array
+                items: { type: string }
+              technicalNotes: { type: string }
+              dependsOn:
+                type: array
+                items: { type: string }
+              priority: { type: number }
+              uncertainty: { type: number }
+              impact: { type: number }
+              riskScore: { type: number }
+              archRiskTrigger: { type: boolean }
+              interfaceSeam: { type: string }
+              passes: { type: boolean }
+            required: [id, title, description, acceptanceCriteria, dependsOn, priority, uncertainty, impact, riskScore, archRiskTrigger, interfaceSeam, passes]
+        allowedPaths:
+          type: array
+          items: { type: string }
+        architectureGuardrails:
+          type: object
+          properties:
+            interfaceBudget: { type: string }
+            depthGoal: { type: string }
+            seamContract: { type: string }
+          required: [interfaceBudget, depthGoal, seamContract]
+      required: [issue_key, slug, userStories, allowedPaths, architectureGuardrails]
+
+  # ═════════════════════════════════════════════════════════════
+  # NODE 2b2: WRITE JIRA STATE (jira_backed fast path only)
+  # Takes decompose-from-jira output, writes a MINIMAL local state file
+  # (prd.json without prd.md), and creates Jira child tickets.
+  # This is the only disk write in the jira_backed path.
+  # ═════════════════════════════════════════════════════════════
+  - id: write-jira-state
+    depends_on: [decompose-from-jira]
+    when: "$detect-input.output.input_type == 'jira_backed'"
+    bash: |
+      set -uo pipefail
+      _DECOMP=$decompose-from-jira.output
+      SCRIPT=$(mktemp "${TMPDIR:-/tmp}/jira-state-XXXXXX.py")
+      cat > "$SCRIPT" << 'PYEOF'
+      import json, os, urllib.request, base64
+      d = json.loads(os.environ['DECOMP'])
+      slug = d['slug']
+      issue_key = d['issue_key']
+      prd_dir = f".archon/ralph/{slug}"
+      os.makedirs(prd_dir, exist_ok=True)
+
+      # Write minimal prd.json (same schema as generate-prd — no prd.md)
+      prd_json = {
+          'project': issue_key,
+          'branchName': slug,
+          'prdFile': f'{prd_dir}/prd.json',
+          'description': f'Jira ticket {issue_key} — stories decomposed from ticket ACs',
+          'userStories': d['userStories'],
+          'allowedPaths': d['allowedPaths'],
+          'architectureGuardrails': d['architectureGuardrails'],
+          'jiraChildIssues': []  # populated below
+      }
+      json.dump(prd_json, open(f'{prd_dir}/prd.json', 'w'), indent=2)
+      print(f'PRD_DIR={prd_dir}')
+
+      # Create Jira child tickets (best-effort)
+      base_url = os.environ.get('JIRA_BASE_URL', '').rstrip('/')
+      email = os.environ.get('JIRA_EMAIL', '')
+      token = os.environ.get('JIRA_API_TOKEN', '')
+      subtask_type = os.environ.get('JIRA_SUBTASK_TYPE', 'Sub-task')
+      if not (base_url and email and token):
+          print('JIRA_STORIES_SKIPPED=not_configured'); exit()
+
+      auth = base64.b64encode(f'{email}:{token}'.encode()).decode()
+      ag = d.get('architectureGuardrails', {})
+      project_key = issue_key.split('-')[0]
+      created = []
+      for s in d['userStories']:
+          risk = s.get('riskScore', 1)
+          prio = 'High' if risk >= 6 else ('Medium' if risk >= 3 else 'Low')
+          arch = s.get('archRiskTrigger', False)
+          seam = s.get('interfaceSeam', 'N/A')
+          acs = '\n'.join(f'  - Scenario: {ac}' for ac in s.get('acceptanceCriteria', []))
+          arch_block = (f'\n\nRisk: {risk}/9 {"[ARCH-RISK]" if arch else ""}'
+                        f'\nSeam: {seam}'
+                        f'\nInterface Budget: {ag.get("interfaceBudget", "")}'
+                        f'\nDepth Goal: {ag.get("depthGoal", "")}'
+                        f'\nSeam Contract: {ag.get("seamContract", "")}')
+          body_text = (f'Story: {s["id"]}\n\n{s.get("description","")}'
+                       f'\n\nAcceptance Criteria:\n{acs}'
+                       f'\n\nTechnical Notes:\n{s.get("technicalNotes","")}{arch_block}')
+          body = {'fields': {
+              'project': {'key': project_key},
+              'parent': {'key': issue_key},
+              'issuetype': {'name': subtask_type},
+              'summary': f'{s["id"]}: {s["title"]}',
+              'description': {'type': 'doc', 'version': 1,
+                              'content': [{'type': 'paragraph',
+                                           'content': [{'type': 'text', 'text': body_text}]}]},
+              'priority': {'name': prio},
+              'labels': ['arch-risk'] if arch else []
+          }}
+          req = urllib.request.Request(
+              f'{base_url}/rest/api/3/issue',
+              data=json.dumps(body).encode(),
+              headers={'Authorization': f'Basic {auth}',
+                       'Content-Type': 'application/json',
+                       'Accept': 'application/json'},
+              method='POST')
+          try:
+              with urllib.request.urlopen(req) as r:
+                  rd = json.loads(r.read())
+                  created.append({'storyId': s['id'], 'jiraKey': rd['key'],
+                                   'url': f'{base_url}/browse/{rd["key"]}'})
+                  print(f'Created {rd["key"]} for {s["id"]}')
+          except Exception as e:
+              print(f'WARNING: {s["id"]} failed: {e}')
+              created.append({'storyId': s['id'], 'jiraKey': None, 'error': str(e)})
+
+      prd_json['jiraChildIssues'] = created
+      json.dump(prd_json, open(f'{prd_dir}/prd.json', 'w'), indent=2)
+      print(f'JIRA_STORIES_CREATED={len([c for c in created if c.get("jiraKey")])}/{len(d["userStories"])}')
+      PYEOF
+      DECOMP="$_DECOMP" python3 "$SCRIPT"
+      rm -f "$SCRIPT"
+  # Creates one Jira subtask per user story on the parent ticket.
+  # Maps story fields → Jira fields: summary, description (ADF), priority
+  # (derived from riskScore), labels (arch-risk for archRiskTrigger),
+  # acceptance criteria, technical notes, and architecture seam/guardrails.
+  # Stores the created issue keys back in prd.json.jiraChildIssues[].
+  # Best-effort: skips silently when Jira is not configured.
+  # ═════════════════════════════════════════════════════════════
+  - id: write-jira-stories
+    depends_on: [write-prd-files]
+    when: "$detect-input.output.input_type != 'ready' and $detect-input.output.input_type != 'jira_backed'"
+    bash: |
+      set -uo pipefail
+      PRD_FILE=$(find .archon/ralph -name "prd.json" -type f 2>/dev/null | head -1)
+      ISSUE_KEY=$(printf '%s' "$USER_MESSAGE" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      if [ -z "$PRD_FILE" ] || [ -z "$ISSUE_KEY" ]; then
+        echo "JIRA_STORIES_SKIPPED=no_prd_or_key"; exit 0
+      fi
+      if [ -z "${JIRA_BASE_URL:-}" ] || [ -z "${JIRA_EMAIL:-}" ] || [ -z "${JIRA_API_TOKEN:-}" ]; then
+        echo "JIRA_STORIES_SKIPPED=not_configured"; exit 0
+      fi
+      SUBTASK_TYPE="${JIRA_SUBTASK_TYPE:-Sub-task}"
+      SCRIPT=$(mktemp "${TMPDIR:-/tmp}/jira-stories-XXXXXX.py")
+      cat > "$SCRIPT" << 'PYEOF'
+      import json, os, urllib.request, base64, sys
+      prd_file=os.environ['PRD_FILE']; issue_key=os.environ['ISSUE_KEY']
+      base_url=os.environ['JIRA_BASE_URL'].rstrip('/')
+      auth=base64.b64encode(f"{os.environ['JIRA_EMAIL']}:{os.environ['JIRA_API_TOKEN']}".encode()).decode()
+      subtask_type=os.environ.get('SUBTASK_TYPE','Sub-task')
+      d=json.load(open(prd_file))
+      stories=d.get('userStories',[])
+      ag=d.get('architectureGuardrails',{})
+      project_key=issue_key.split('-')[0]
+      created=[]
+      for s in stories:
+        risk=s.get('riskScore', s.get('uncertainty',1)*s.get('impact',1))
+        prio='High' if risk>=6 else ('Medium' if risk>=3 else 'Low')
+        arch=s.get('archRiskTrigger',False)
+        seam=s.get('interfaceSeam','N/A')
+        acs='\n'.join(f"  - Scenario: {ac}" for ac in s.get('acceptanceCriteria',[]))
+        arch_block=f"\n\nRisk: {risk}/9 {'[ARCH-RISK]' if arch else ''}\nSeam: {seam}\nInterface Budget: {ag.get('interfaceBudget','zero new exports')}\nDepth Goal: {ag.get('depthGoal','complexity stays in module')}\nSeam Contract: {ag.get('seamContract','see PRD')}"
+        body_text=f"Story: {s['id']}\n\n{s.get('description','')}\n\nAcceptance Criteria:\n{acs}\n\nTechnical Notes:\n{s.get('technicalNotes','')}\n{arch_block}"
+        body={"fields":{"project":{"key":project_key},"parent":{"key":issue_key},"issuetype":{"name":subtask_type},"summary":f"{s['id']}: {s['title']}","description":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":body_text}]}]},"priority":{"name":prio},"labels":["arch-risk"] if arch else []}}
+        req=urllib.request.Request(f"{base_url}/rest/api/3/issue",data=json.dumps(body).encode(),headers={"Authorization":f"Basic {auth}","Content-Type":"application/json","Accept":"application/json"},method="POST")
+        try:
+          with urllib.request.urlopen(req) as r:
+            rd=json.loads(r.read())
+            created.append({"storyId":s['id'],"jiraKey":rd['key'],"url":f"{base_url}/browse/{rd['key']}"})
+            print(f"Created {rd['key']} for {s['id']}")
+        except Exception as e:
+          print(f"WARNING: {s['id']} subtask failed: {e}")
+          created.append({"storyId":s['id'],"jiraKey":None,"error":str(e)})
+      d['jiraChildIssues']=created
+      json.dump(d,open(prd_file,'w'),indent=2)
+      print(f"JIRA_STORIES_CREATED={len([c for c in created if c.get('jiraKey')])}/{len(stories)}")
+      PYEOF
+      PRD_FILE="$PRD_FILE" ISSUE_KEY="$ISSUE_KEY" SUBTASK_TYPE="$SUBTASK_TYPE" python3 "$SCRIPT"
+      rm -f "$SCRIPT"
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 3: VALIDATE & SETUP
+  # Finds PRD directory, reads all state files, installs deps,
+  # verifies the environment is ready for implementation.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate-prd
+    depends_on: [detect-input, write-prd-files, write-jira-state, fetch-jira-context]
+    trigger_rule: one_success
+    bash: |
+      set -e
+
+      # ── 1. Find PRD directory ─────────────────────────────────
+      # Try from write-prd-files output first, then detect-input, then discover
+      PRD_DIR=$write-prd-files.output
+      if [ -z "$PRD_DIR" ] || [ ! -f "$PRD_DIR/prd.json" ]; then
+        PRD_DIR=$detect-input.output.prd_dir
+      fi
+
+      # If still not found, discover it
+      if [ -z "$PRD_DIR" ] || [ ! -f "$PRD_DIR/prd.json" ]; then
+        FOUND=$(find .archon/ralph -name "prd.json" -type f 2>/dev/null | head -1)
+        if [ -n "$FOUND" ]; then
+          PRD_DIR=$(dirname "$FOUND")
+        fi
+      fi
+
+      if [ -z "$PRD_DIR" ] || [ ! -f "$PRD_DIR/prd.json" ]; then
+        echo "ERROR: No prd.json found after generation step."
+        echo "Check the generate-prd node output for errors."
+        exit 1
+      fi
+
+      # A prd.json must be valid JSON — never trust a file discovered by path
+      # alone (see #Bug-13: a failed write-prd-files could otherwise leave a
+      # corrupted file that this existence check would silently accept).
+      if ! python3 -c "import json; json.load(open('$PRD_DIR/prd.json'))" 2>/dev/null; then
+        echo "ERROR: $PRD_DIR/prd.json exists but is not valid JSON."
+        echo "The generation step likely failed — check generate-prd/write-prd-files output."
+        exit 1
+      fi
+
+      # A prd.json must ALSO match the Ralph schema (userStories array with real
+      # entries) — not just be valid JSON. See #Bug-17: a weak detect-input model
+      # can hallucinate `input_type: "ready"` and fabricate its own ad-hoc
+      # prd.json (via a stray bash tool call) using a completely different,
+      # wrong shape. That file is syntactically valid JSON, so the check above
+      # alone would silently accept it and feed a schemaless PRD into the
+      # implement loop — hard to catch after the fact.
+      if ! python3 -c "import json,sys; d=json.load(open('$PRD_DIR/prd.json')); s=d.get('userStories'); sys.exit(0 if isinstance(s,list) and len(s)>0 and all(isinstance(x,dict) and 'id' in x and 'acceptanceCriteria' in x for x in s) else 1)" 2>/dev/null; then
+        echo "ERROR: $PRD_DIR/prd.json is valid JSON but does not match the Ralph PRD schema"
+        echo "(expected a non-empty 'userStories' array with 'id'/'acceptanceCriteria' per story)."
+        echo "This can happen when a weak model hallucinates a 'ready' classification and"
+        echo "writes its own ad-hoc PRD file instead of running the real generation step."
+        echo "Delete $PRD_DIR and re-run so generate-prd produces a properly structured PRD."
+        exit 1
+      fi
+
+      _INPUT_TYPE=$detect-input.output.input_type
+      if [ "$_INPUT_TYPE" != "jira_backed" ] && [ ! -f "$PRD_DIR/prd.md" ]; then
+        echo "ERROR: prd.md not found in $PRD_DIR"
+        exit 1
+      fi
+
+      # A PRD that only covers a SUBSET of the real Jira ticket's acceptance
+      # criteria is exactly how Bug #20 happened: a PRD scoped 1 of 10 real
+      # scenarios, the implement loop satisfied that 1, and qa-review then
+      # produced a plausible-sounding "PASS" against the wrong (too-small)
+      # yardstick. fetch-jira-context ran in parallel with detect-input and
+      # counted the real ticket's Gherkin "Scenario:" blocks — fail closed,
+      # BEFORE burning any implement-loop iterations, if the PRD didn't even
+      # attempt to cover them all. Skipped entirely when no ticket was
+      # referenced or Jira isn't configured (SCENARIO_COUNT=0).
+      _JIRA_CTX=$fetch-jira-context.output
+      _SCEN_COUNT=$(printf '%s' "$_JIRA_CTX" | grep -oE 'SCENARIO_COUNT=[0-9]+' | head -1 | cut -d= -f2)
+      _SCEN_COUNT=${_SCEN_COUNT:-0}
+      if [ "$_SCEN_COUNT" -gt 0 ]; then
+        _AC_COUNT=$(python3 -c "import json; d=json.load(open('$PRD_DIR/prd.json')); print(sum(len(s.get('acceptanceCriteria',[])) for s in d.get('userStories',[])))")
+        echo "Jira ticket has $_SCEN_COUNT acceptance-criteria scenarios; PRD stories declare $_AC_COUNT acceptanceCriteria entries total."
+        if [ "$_AC_COUNT" -lt "$_SCEN_COUNT" ]; then
+          echo "ERROR: PRD under-scopes the real Jira ticket ($_AC_COUNT declared criteria vs $_SCEN_COUNT real scenarios)."
+          echo "generate-prd must size stories to cover EVERY acceptance-criteria scenario in the real ticket, not a subset."
+          echo "Delete $PRD_DIR and re-run so generate-prd re-derives stories from the full ticket."
+          exit 1
+        fi
+      fi
+
+      # ── 2. Install dependencies (worktrees lack node_modules) ──
+      if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
+        echo "Installing dependencies (bun)..."
+        bun install --frozen-lockfile 2>&1 | tail -3
+      elif [ -f "package-lock.json" ]; then
+        echo "Installing dependencies (npm)..."
+        npm ci 2>&1 | tail -3
+      elif [ -f "yarn.lock" ]; then
+        echo "Installing dependencies (yarn)..."
+        yarn install --frozen-lockfile 2>&1 | tail -3
+      elif [ -f "pnpm-lock.yaml" ]; then
+        echo "Installing dependencies (pnpm)..."
+        pnpm install --frozen-lockfile 2>&1 | tail -3
+      fi
+
+      # ── 3. Git state ──────────────────────────────────────────
+      echo "BRANCH=$(git branch --show-current)"
+      echo "GIT_ROOT=$(git rev-parse --show-toplevel)"
+
+      # ── 4. Output PRD context ─────────────────────────────────
+      echo "PRD_DIR=$PRD_DIR"
+      echo "=== PRD_JSON_START ==="
+      cat "$PRD_DIR/prd.json"
+      echo ""
+      echo "=== PRD_JSON_END ==="
+      echo "=== PRD_MD_START ==="
+      if [ -f "$PRD_DIR/prd.md" ]; then
+        cat "$PRD_DIR/prd.md"
+      else
+        echo "(Jira-backed run: the parent ticket and child stories are the specification; no prd.md is written.)"
+      fi
+      echo ""
+      echo "=== PRD_MD_END ==="
+      echo "=== PROGRESS_START ==="
+      if [ -f "$PRD_DIR/progress.txt" ]; then
+        cat "$PRD_DIR/progress.txt"
+      else
+        echo "(no progress yet)"
+      fi
+      echo ""
+      echo "=== PROGRESS_END ==="
+
+      # ── 5. Summary ────────────────────────────────────────────
+      TOTAL=$(grep -c '"passes"' "$PRD_DIR/prd.json" || true)
+      DONE=$(grep -c '"passes": true' "$PRD_DIR/prd.json" || true)
+      TOTAL=${TOTAL:-0}
+      DONE=${DONE:-0}
+      echo "STORIES_TOTAL=$TOTAL"
+      echo "STORIES_DONE=$DONE"
+      echo "STORIES_REMAINING=$(( TOTAL - DONE ))"
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 4: RALPH IMPLEMENTATION LOOP
+  # Fresh context each iteration. Reads PRD state from disk.
+  # One story per iteration. Validates before committing.
+  # ═══════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────
+  # NODE 3b: SYNC WITH MAIN
+  # Merges latest main into the feature branch before any code is
+  # written, so the implementer always starts from a current base.
+  # Fails closed on merge conflicts — agent cannot auto-resolve.
+  # ─────────────────────────────────────────────────────────────
+  - id: sync-with-main
+    depends_on: [validate-prd]
+    bash: |
+      set -eo pipefail
+      BASE=${BASE_BRANCH:-main}
+      echo "Syncing with origin/$BASE before implementation..."
+      git fetch origin "$BASE" --no-tags 2>&1 | tail -3
+      if git merge-base --is-ancestor "origin/$BASE" HEAD 2>/dev/null; then
+        echo "Branch is already up to date with $BASE."
+      else
+        git merge "origin/$BASE" --no-edit -m "chore: sync with $BASE before implementation" 2>&1 || {
+          echo "ERROR: Merge conflict with $BASE — cannot auto-resolve."
+          echo "Resolve conflicts manually in the worktree and re-run."
+          exit 1
+        }
+        echo "MERGED=true"
+      fi
+      echo "CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)"
+      echo "HEAD=$(git rev-parse --short HEAD)"
+
+  # ═════════════════════════════════════════════════════════════
+  # NODE 3c: ENVIRONMENT INTEGRITY GATE (Tier A — Item 5)
+  # Substrate liveness check. Verifies build toolchain, installs deps if
+  # missing, and proves the working tree compiles cleanly BEFORE any
+  # implementation begins. A broken build here catches environment drift
+  # early rather than after the implement loop burns AI budget.
+  # HARD gate: exits 1 on any failure.
+  # ═════════════════════════════════════════════════════════════
+  - id: check-environment
+    depends_on: [sync-with-main]
+    bash: |
+      set -uo pipefail
+      FAIL=0
+
+      # 1. Verify build toolchain is present
+      if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
+        bun --version >/dev/null 2>&1 && echo "PASS: bun $(bun --version)" || { echo "ERROR: bun not found"; FAIL=1; }
+      fi
+      node --version >/dev/null 2>&1 && echo "PASS: node $(node --version)" || echo "WARN: node not found (may be fine for bun-only projects)"
+
+      # 2. Find packages touched by this branch and ensure node_modules exist
+      CHANGED=$(git diff --name-only "$(git merge-base HEAD "${BASE_BRANCH:-main}")"..HEAD 2>/dev/null || true)
+      PKG_DIRS=$(for f in $CHANGED; do d=$(dirname "$f"); while [ "$d" != "." ] && [ "$d" != "/" ]; do
+        [ -f "$d/package.json" ] && { echo "$d"; break; }; d=$(dirname "$d"); done; done | sort -u)
+
+      for dir in ${PKG_DIRS:-}; do
+        if [ ! -d "$dir/node_modules" ]; then
+          echo "Installing dependencies in $dir..."
+          (cd "$dir" && (bun install 2>&1 || npm install 2>&1) | tail -5) || { echo "ERROR: install failed in $dir"; FAIL=1; }
+        else
+          echo "PASS: $dir/node_modules present"
+        fi
+      done
+
+      # 3. Prove the working tree compiles before any AI touches it
+      for dir in ${PKG_DIRS:-}; do
+        HAS_BUILD=$(cd "$dir" && node -e "const d=require('./package.json'); process.exit(d.scripts&&d.scripts.build?0:1)" 2>/dev/null && echo 1 || echo 0)
+        if [ "$HAS_BUILD" = "1" ]; then
+          echo "=== Pre-implementation build check: $dir ==="
+          (cd "$dir" && bun run build 2>&1 | tail -10) || {
+            echo "ERROR: baseline build FAILED in $dir — environment is broken before any changes."
+            echo "Fix the build on the base branch before running Ralph."
+            FAIL=1
+          }
+        fi
+      done
+
+      [ "$FAIL" = "1" ] && { echo "ENVIRONMENT_GATE=FAIL"; exit 1; }
+      echo "ENVIRONMENT_GATE=PASS"
+
+  # ═════════════════════════════════════════════════════════════
+  # NODE 3d: EXPLORER — Read-Only Interface Catalog (Item 4)
+  # Manhattan Phase 3 Explorer subagent. READ ONLY — this node must
+  # never write, edit, or commit anything. It catalogs the API of every
+  # component the implementation will touch, so the Implementer node
+  # receives a verified interface brief rather than having to guess.
+  # Key safety property: the agent that reads is never the agent that writes.
+  # ═════════════════════════════════════════════════════════════
+  - id: explore
+    depends_on: [check-environment]
+    context: fresh
+    model: small
+    prompt: |
+      # Explorer — Read-Only Interface Catalog
+
+      You are a **READ-ONLY** explorer. You MUST NOT write, edit, commit, or
+      stage any file. Violation terminates this run immediately.
+
+      Your sole job: produce a verified interface catalog for every component
+      the upcoming implementation will interact with.
+
+      ## Context
+      $validate-prd.output
+
+      ## Step 0: Load Cross-Run Lessons (Dynamic Context)
+      Before reading any source files, check for accumulated lessons:
+      ```bash
+      LESSONS="${ARCHON_HOME:-$HOME/.archon}/ralph-lessons.md"
+      [ -f "$LESSONS" ] && echo "=== PAST FAILURES (read carefully) ===" && cat "$LESSONS" | tail -100
+      ```
+      These are real bugs that previous Ralph runs shipped. Treat every entry as a
+      **known pitfall** — flag it in `arch_warnings` if the current codebase has the
+      same pattern.
+
+      ## Step 1: Read the PRD
+      Find PRD_DIR from context. Read prd.json for `allowedPaths` and upcoming stories.
+
+      ## Step 2: Catalog every imported component
+      For each file in `allowedPaths`:
+      1. `cat <file>` to see its imports
+      2. For EVERY imported component/utility from the project (not from node_modules):
+         `cat <component-source-file>` to read its ACTUAL interface.
+         Verify:
+         - Props destructured in the function signature (not inferred from call sites)
+         - Whether it uses/renders `{children}` — search for `children` in the return/JSX
+         - What it returns (JSX, string, null, etc.)
+         - Any context it reads (useContext calls)
+
+      ## Step 3: Flag pre-existing risks
+      Note any component that:
+      - Does NOT render children (common trap: wrapping content inside it is a no-op)
+      - Has a prop that is easy to confuse with a different component's prop
+      - Reads from a context that the changed files must also provide
+      - Matches a pattern in the past-failures lessons file
+
+      ## Output
+      ```json
+      {
+        "files_cataloged": ["list of files read"],
+        "lessons_loaded": true,
+        "interface_catalog": [
+          {
+            "component": "ComponentName",
+            "source_file": "path/to/file.jsx",
+            "props": ["prop1", "prop2"],
+            "renders_children": false,
+            "reads_context": ["ContextName"],
+            "returns": "JSX | null",
+            "seam": "how this component integrates with the implementation target"
+          }
+        ],
+        "arch_warnings": ["list of pre-existing risks the implementer MUST NOT replicate"]
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        files_cataloged:
+          type: array
+          items:
+            type: string
+        lessons_loaded:
+          type: boolean
+        interface_catalog:
+          type: array
+          items:
+            type: object
+            properties:
+              component:
+                type: string
+              source_file:
+                type: string
+              props:
+                type: array
+                items:
+                  type: string
+              renders_children:
+                type: boolean
+              reads_context:
+                type: array
+                items:
+                  type: string
+              returns:
+                type: string
+              seam:
+                type: string
+            required: [component, source_file, renders_children, seam]
+        arch_warnings:
+          type: array
+          items:
+            type: string
+      required: [files_cataloged, interface_catalog, arch_warnings]
+
+  - id: implement
+    depends_on: [explore]
+    idle_timeout: 600000
+    provider: pi
+    model: anthropic/claude-sonnet-4-5
+    loop:
+      prompt: |
+        You are a coding agent (Implementer). Implement the next unfinished story.
+
+        ## Setup Context
+        $validate-prd.output
+
+        ## Interface Catalog (from Explorer — VERIFIED component APIs)
+        $explore.output
+
+        **CRITICAL:** The interface catalog above lists every component's ACTUAL props
+        and whether it renders children. Trust it over call-site inference. A component
+        with `renders_children: false` silently discards anything wrapped inside it.
+        Read `arch_warnings` — these are pre-existing traps you MUST NOT replicate.
+
+        **MANDATORY: Your very first action MUST be a bash tool call — no text before it.**
+
+        ```bash
+        PRD_DIR=$(grep '^PRD_DIR=' <<'CTX'
+        $validate-prd.output
+        CTX
+        grep '^PRD_DIR=' | head -1 | cut -d= -f2)
+        cat "$PRD_DIR/prd.json"
+        ```
+
+        ## Architecture Guardrails (Manhattan Interface/Depth/Seam Brief)
+        Read `architectureGuardrails` from prd.json and treat as hard constraints:
+        - **Interface Budget** (from prd.json): maximum public API surface you may add.
+          Default: zero new exports from files outside `allowedPaths`.
+        - **Depth Goal** (from prd.json): complexity must live inside the module,
+          not scattered as inline logic in JSX render or call sites.
+        - **Seam Contract** (from prd.json): name the integration boundary.
+          Any story with `archRiskTrigger: true` requires extra caution.
+
+        ## Steps (execute each as a bash call)
+        1. Read prd.json → find highest-priority story where `passes=false`
+          2. Read prd.json for acceptance criteria and `interfaceSeam`. If prd.md
+            exists (fallback idea/file path), read it for additional context;
+            Jira-backed runs intentionally have no prd.md.
+        3. Read the target source file(s)
+        4. For every component the diff will USE: cross-check the interface catalog above.
+           If the catalog shows `renders_children: false`, do NOT wrap children in it.
+           If the catalog shows a prop list, only pass listed props (others are no-ops).
+        5. Write the code change
+        6. Build check: `cd <app-dir> && bun run build 2>&1 | tail -15` — fix errors first
+        7. Lint: `bun run lint --max-warnings 0 2>&1 | tail -20`
+        8. Stage ONLY product files — never `git add -A`/`git add .`/`git add --all`.
+           Name each file: `git add apps/path/to/file.jsx`
+           Never stage `.archon/`, `*.png`, `*.jpg`, `docs/`, `*.baseline`.
+        9. Commit: `git commit -m "feat: <story-title>"`
+        10. Update prd.json: `passes=true` for the completed story; append to progress.txt
+        11. If Jira is configured (JIRA_BASE_URL/EMAIL/API_TOKEN env vars present),
+            transition the story's Jira child ticket to "In Progress" when starting
+          and "Done" when passes=true. Read transition IDs with Python urllib,
+          constructing the Basic Authorization header from environment variables
+          inside the Python process. Never put `$JIRA_API_TOKEN` in command arguments.
+        12. Re-read prd.json — if all stories pass: output the trajectory report then the completion signal:
+            ```
+            <trajectory>
+            required_steps_completed:
+            - read_component_sources: [list each component you cat-ed before editing]
+            - build_checks_run: [list each story where you ran bun run build]
+            - explicit_git_add: [list each git add command with exact file paths]
+            - jira_updates: [list each Jira status update made, or 'none']
+            </trajectory>
+            <promise>COMPLETE</promise>
+            ```
+            (do NOT push — handled by push-and-pr node)
+        13. Otherwise end — the loop starts a fresh iteration for the next story
+
+        ## Rules
+        - ONE story per iteration
+        - Never commit broken code — fix build/lint/type errors first
+        - Never stage .archon/ files or any non-product file
+        - Use existing theme tokens only (no new CSS values, no new libraries)
+        - VISIBLE criterion → verify the element is in the React render path,
+          not just passed as a prop to a component that ignores it
+      until: COMPLETE
+      max_iterations: 15
+      fresh_context: true
+
+
+  # ─────────────────────────────────────────────────────────────
+  # NODE 4b: FINALIZE LOCALLY (NO PUSH, NO PR)
+  # The implement loop may leave stray uncommitted changes. This node
+  # commits them locally only. It deliberately does NOT push the branch
+  # or open a PR — the branch stays local until a human (or a separate
+  # push workflow) decides to publish it, after QA review below.
+  # ─────────────────────────────────────────────────────────────
+  - id: finalize-local
+    depends_on: [implement]
+    bash: |
+      set -euo pipefail
+
+      # ───────────────────────────────────────────────────────────
+      # HARNESS HOOKS (runs post-file-edit, pre-commit)
+      # Paper: "Hooks are the place for things the agent should never forget but often does."
+      # ───────────────────────────────────────────────────────────
+      HOOK_FAIL=0
+
+      BASE=${BASE_BRANCH:-main}
+      MERGE_BASE=$(git merge-base HEAD "$BASE")
+      BRANCH_DIFF=$(mktemp "${TMPDIR:-/tmp}/ralph-branch-diff-XXXXXX.patch")
+      git diff "$MERGE_BASE"..HEAD > "$BRANCH_DIFF"
+
+      # Hook 1: Flag debug artifacts anywhere in the committed branch diff.
+      DEBUG_HITS=$(grep '^+' "$BRANCH_DIFF" | grep -E 'console\.(log|warn|debug)\s*\(' | head -5 || true)
+      if [ -n "$DEBUG_HITS" ]; then
+        echo "HOOK WARN: console.log/debug found in staged changes (consider removing):"
+        echo "$DEBUG_HITS"
+        # Warn only — not all console calls are debug artifacts
+      fi
+
+      # Hook 2: Block git add -A / git add . patterns recorded in implement output
+      _IMPL=$implement.output
+      if printf '%s' "$_IMPL" | grep -qE 'git add (-A|\.)\b|git add --all'; then
+        echo "HOOK ERROR: implement loop used 'git add -A' or 'git add .' — this stages non-product files."
+        echo "All git add calls must name files explicitly. Blocking commit."
+        HOOK_FAIL=1
+      fi
+
+      # Hook 3: Scan the complete committed branch diff for hardcoded secrets.
+      SECRET_HITS=$(grep '^+' "$BRANCH_DIFF" | grep -iE '(api[_-]?key|secret|password|token|bearer)\s*=\s*["'\''`][A-Za-z0-9+/]{20,}' | head -3 || true)
+      if [ -n "$SECRET_HITS" ]; then
+        echo "HOOK ERROR: potential hardcoded secret detected in branch changes:"
+        echo "$SECRET_HITS"
+        HOOK_FAIL=1
+      fi
+
+      # Hook 4: Verify AGENTS.md or CLAUDE.md exists (Gap 7 — rule file verification)
+      if [ ! -f "AGENTS.md" ] && [ ! -f "CLAUDE.md" ] && [ ! -f ".claude/CLAUDE.md" ]; then
+        echo "HOOK WARN: No AGENTS.md or CLAUDE.md found at repo root."
+        echo "Add project-specific rules before the next run; this workflow will not create product documentation automatically."
+      fi
+
+      rm -f "$BRANCH_DIFF"
+      [ "$HOOK_FAIL" = "1" ] && { echo "Harness hooks failed — blocking commit."; exit 1; }
+
+      # The implementer must explicitly stage and commit every product file.
+      # Never auto-stage leftovers because that can capture unrelated user work.
+      LEFTOVERS=$(git status --porcelain --untracked-files=all | grep -vE '^\?\? \.archon/ralph/' || true)
+      if [ -n "$LEFTOVERS" ]; then
+        echo "HOOK ERROR: uncommitted product changes remain after implementation:"
+        echo "$LEFTOVERS"
+        echo "The implementer must explicitly stage named files and commit them."
+        exit 1
+      fi
+      echo "HOOKS=PASSED"
+      echo "Branch $(git rev-parse --abbrev-ref HEAD) is finalized locally (not pushed)."
+
+  # ─────────────────────────────────────────────────────────────
+  # NODE 4c: RUN TESTS (deterministic gate — not the agent's self-report)
+  # Runs the repo's root `make test` (if a test target exists) and the
+  # nearest package.json's own test script for every changed file. Blocks
+  # the pipeline on failure — nothing proceeds to visual QA, scope-check,
+  # QA review, or the Jira update if tests don't actually pass.
+  # ─────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────
+  # NODE 4b2: PRE-PUSH CLEAN
+  # Fails if the feature branch changes any .archon file. It never deletes
+  # repository-owned Archon configuration inherited from the base branch.
+  # ─────────────────────────────────────────────────────────────
+  - id: pre-push-clean
+    depends_on: [finalize-local]
+    bash: |
+      set -uo pipefail
+      BASE=${BASE_BRANCH:-main}
+      MERGE_BASE=$(git merge-base HEAD "$BASE")
+      ARCHON_CHANGES=$(git diff --name-only "$MERGE_BASE"..HEAD -- .archon/ || true)
+      if [ -n "$ARCHON_CHANGES" ]; then
+        echo "ERROR: feature branch changes Archon workflow/configuration files:"
+        echo "$ARCHON_CHANGES"
+        echo "Product PRs must not contain .archon changes. Remove them explicitly; nothing was deleted automatically."
+        exit 1
+      fi
+      echo "CLEAN=true (no .archon changes on feature branch)"
+
+  - id: run-tests
+    depends_on: [pre-push-clean]
+    bash: |
+      set -uo pipefail
+      FAILED=0
+
+      if [ -f "Makefile" ] && grep -q "^test:" Makefile; then
+        echo "=== make test ==="
+        set +e
+        TEST_OUT=$(make test 2>&1)
+        TEST_STATUS=$?
+        set -e
+        echo "$TEST_OUT"
+        if [ "$TEST_STATUS" != "0" ]; then
+          echo "ERROR: make test exited with status $TEST_STATUS"
+          FAILED=1
+        fi
+      else
+        echo "No root Makefile test target — skipping make test"
+      fi
+
+      CHANGED=$(git diff --name-only "$(git merge-base HEAD "$BASE_BRANCH")..HEAD")
+      PKG_DIRS=$(for f in $CHANGED; do d=$(dirname "$f"); while [ "$d" != "." ] && [ "$d" != "/" ]; do if [ -f "$d/package.json" ]; then echo "$d"; break; fi; d=$(dirname "$d"); done; done | sort -u)
+
+      if [ -z "$PKG_DIRS" ]; then
+        echo "No package.json found near changed files — skipping JS test suites"
+      else
+        for dir in $PKG_DIRS; do
+          echo "=== tests in $dir ==="
+          if [ ! -d "$dir/node_modules" ]; then
+            echo "Installing dependencies in $dir..."
+            (cd "$dir" && npm install 2>&1 | tail -10)
+          fi
+          if ! (cd "$dir" && npm run test 2>&1); then
+            echo "ERROR: tests failed in $dir"
+            FAILED=1
+          fi
+        done
+      fi
+
+      if [ "$FAILED" = "1" ]; then
+        echo "One or more test suites failed — blocking the pipeline (no push, no Jira update)."
+        exit 1
+      fi
+      echo "All applicable tests passed."
+
+  # ─────────────────────────────────────────────────────────────
+  # NODE 4d: VISUAL QA — Tier B Golden-Path Probe (Item 6)
+  # HARD gate. Silence is NOT a pass: missing playwright.config = FAIL.
+  # Tests must assert a KNOWN DATA VALUE (not just page load).
+  # Empty-state must be ABSENT. No ≥400 API failures.
+  # ─────────────────────────────────────────────────────────────
+  - id: visual-qa
+    depends_on: [run-tests]
+    bash: |
+      set -uo pipefail
+      CHANGED=$(git diff --name-only "$(git merge-base HEAD "$BASE_BRANCH")..HEAD")
+      PKG_DIRS=$(for f in $CHANGED; do d=$(dirname "$f"); while [ "$d" != "." ] && [ "$d" != "/" ]; do
+        if [ -f "$d/playwright.config.js" ] || [ -f "$d/playwright.config.ts" ]; then echo "$d"; break; fi
+        d=$(dirname "$d"); done; done | sort -u)
+
+      if [ -z "$PKG_DIRS" ]; then
+        echo "ERROR: Tier B FAIL — no playwright.config found near changed files."
+        echo "A missing golden-path probe is NOT a pass (Manhattan no-silent-fallback rule)."
+        echo "Add a Playwright spec that asserts a KNOWN DATA VALUE is visible and"
+        echo "that the empty-state component is ABSENT before this gate can pass."
+        exit 1
+      fi
+
+      FAILED=0
+      for dir in $PKG_DIRS; do
+        echo "=== Tier B Golden-Path Probe in $dir ==="
+        [ ! -d "$dir/node_modules" ] && (cd "$dir" && npm install 2>&1 | tail -5)
+        (cd "$dir" && npx playwright install chromium 2>&1 | tail -3 || true)
+
+        TEST_OUT=$(cd "$dir" && npx playwright test 2>&1) || FAILED=1
+        echo "$TEST_OUT" | tail -30
+
+        # Verify specs assert meaningful content — not just page.title() / .url
+        SPEC_FILES=$(find "$dir" -name '*.spec.*' -o -name '*.test.*' 2>/dev/null \
+          | xargs grep -l 'playwright\|page\.' 2>/dev/null | head -10 || true)
+        SHALLOW_ONLY=1
+        for spec in $SPEC_FILES; do
+          if grep -qE "(toContainText|toHaveText|getByText|locator.*text|toBeVisible|waitForSelector)" \
+               "$spec" 2>/dev/null; then
+            SHALLOW_ONLY=0; break
+          fi
+        done
+        if [ "$SHALLOW_ONLY" = "1" ] && [ -n "$SPEC_FILES" ]; then
+          echo "ERROR: Tier B FAIL — specs exist but assert only page load/title."
+          echo "Specs must assert a KNOWN DATA VALUE is visible and empty-state is ABSENT."
+          FAILED=1
+        fi
+      done
+
+      [ "$FAILED" = "1" ] && { echo "Tier B FAIL — blocking pipeline."; exit 1; }
+      echo "Tier B PASS — golden-path probe passed with meaningful content assertions."
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4d2: ARCHITECTURE AUDIT — Independent Interface & Seam Review (Item 4)
+  # Manhattan Architecture Auditor (fresh context, never saw the impl).
+  # Checks children-trap, no-op props, interface width, depth violations.
+  # ══════════════════════════════════════════════════════════════════
+  - id: architecture-audit
+    depends_on: [visual-qa]
+    context: fresh
+    model: small
+    prompt: |
+      # Architecture Auditor — Independent Interface & Seam Review
+
+      You are an **Architecture Auditor**. You did NOT write this code.
+      You have the Explorer's verified interface catalog from a prior node.
+      Prove the implementation respects the Interface Budget, Depth Goal,
+      and Seam Contract from the PRD's architectureGuardrails.
+
+      ## Explorer Interface Catalog
+      $explore.output
+
+      ## Step 1: Read the diff
+      ```bash
+      PRD_FILE=$(find .archon/ralph -name "prd.json" | head -1)
+      cat "$PRD_FILE"
+      git diff $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      ```
+
+      ## Step 2: Check each criterion
+
+      **Children Trap** (highest severity): For every component in the catalog with
+      `renders_children: false`, grep the diff for content wrapped inside it as JSX children.
+      Any such wrapping is a VIOLATION — the children are silently discarded at runtime.
+
+      **No-op Props**: For every prop passed in the diff to a cataloged component,
+      verify it appears in that component's `props` list. Unlisted prop = no-op.
+
+      **Interface Width**: Count new exported symbols in allowedPaths files.
+      Compare to `architectureGuardrails.interfaceBudget` in prd.json.
+
+      **Depth**: Inline logic (ternaries, maps, conditions) added directly in JSX
+      render instead of in a hook/helper = depth violation.
+
+      ## Step 2b: Trajectory Audit (Gap 1 — were the right steps taken?)
+      Read the implement loop's `<trajectory>` block from its output:
+      ```bash
+      printf '%s' "$IMPLEMENT_OUTPUT" | sed -n '/<trajectory>/,/<\/trajectory>/p'
+      ```
+      Verify each required step was present for every story:
+      - `read_component_sources`: At least one `cat <component>` was performed before editing.
+        Empty or absent = "Implementer skipped component source reading \u2014 interface assumptions unverified."
+      - `build_checks_run`: Each story has a build run listed.
+        Missing for any story = "Build check skipped on story X \u2014 compile errors may exist."
+      - `explicit_git_add`: Every git add names a specific file path, NOT `-A` or `.`.
+        If `-A` or `.` appears = "Broad git add used \u2014 non-product files may be staged."
+      A missing `<trajectory>` block itself counts as a finding: "No trajectory reported."
+
+      ## Step 3: Output (required JSON)
+      ```json
+      {
+        "verdict": "pass|fail",
+        "children_trap_violations": [],
+        "noop_prop_violations": [],
+        "interface_width_violations": [],
+        "depth_violations": [],
+        "seam_issues": [],
+        "summary": "2-sentence factual summary"
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum: [pass, fail]
+        children_trap_violations:
+          type: array
+          items:
+            type: string
+        noop_prop_violations:
+          type: array
+          items:
+            type: string
+        interface_width_violations:
+          type: array
+          items:
+            type: string
+        depth_violations:
+          type: array
+          items:
+            type: string
+        seam_issues:
+          type: array
+          items:
+            type: string
+        trajectory_issues:
+          type: array
+          description: "Steps the implement loop skipped (build check, component read, explicit git add)"
+          items:
+            type: string
+        summary:
+          type: string
+      required: [verdict, children_trap_violations, noop_prop_violations, interface_width_violations, depth_violations, seam_issues, summary]
+
+  # ─────────────────────────────────────────────────────────────
+  # NODE 4e: SCOPE CHECK (hard fence — no changes outside the PRD's
+  # declared allowedPaths, e.g. no code outside what the Jira ticket
+  # asked for). Blocks the pipeline on any out-of-scope file.
+  # ─────────────────────────────────────────────────────────────
+  - id: scope-check
+    depends_on: [architecture-audit]
+    bash: |
+      set -uo pipefail
+      PRD_FILE=$(find .archon/ralph -name "prd.json" -type f 2>/dev/null | head -1)
+      if [ -z "$PRD_FILE" ]; then
+        echo "ERROR: No prd.json found — cannot verify scope, failing closed."
+        exit 1
+      fi
+
+      CHANGED_FILE=$(mktemp /tmp/changed-files-XXXXXX.txt)
+      git diff --name-only "$(git merge-base HEAD "$BASE_BRANCH")..HEAD" > "$CHANGED_FILE"
+
+      PRD_FILE="$PRD_FILE" CHANGED_FILE="$CHANGED_FILE" python3 -c "
+        import json,os,fnmatch,sys
+        d=json.load(open(os.environ['PRD_FILE']))
+        # allowedPaths from the PRD is the only source of truth.
+        # .archon/ and other workflow internals are NEVER allowed in a product PR;
+        # pre-push-clean should have removed them — if any remain it is a hard error.
+        allowed=list(d.get('allowedPaths',[]))
+        NEVER_ALLOWED=['*.archon/*','*.archon/**','.archon/','*.png','*.jpg','*.jpeg','*.gif','*.svg','*.baseline','docs/']
+        changed=[l.strip() for l in open(os.environ['CHANGED_FILE']) if l.strip()]
+        offenders=[]
+        for f in changed:
+          in_never=[fnmatch.fnmatch(f,p) or f.startswith(p.rstrip('*')) for p in NEVER_ALLOWED]
+          in_allowed=[fnmatch.fnmatch(f,p) or f.startswith(p.rstrip('*')) for p in allowed]
+          if any(in_never):
+            offenders.append(f+'  [NEVER-ALLOWED: non-product file]')
+          elif not any(in_allowed):
+            offenders.append(f)
+        print('SCOPE VIOLATION - out-of-scope files:',offenders) if offenders else print('All changed files within declared scope:',changed)
+        sys.exit(1 if offenders else 0)
+        "
+      RESULT=$?
+      rm -f "$CHANGED_FILE"
+      if [ "$RESULT" != "0" ]; then
+        echo "Blocking the pipeline — a change touched files outside the PRD's declared scope (no push, no Jira update)."
+        exit 1
+      fi
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 4f: PUSH BRANCH & OPEN PR
+  # All deterministic gates have passed (tests, visual QA, scope check).
+  # This is the ONLY place a push ever happens — the implement loop
+  # must never call git push directly.
+  # ═══════════════════════════════════════════════════════════════
+  - id: publication-gate
+    depends_on: [devil-advocate, verify-qa-completeness]
+    bash: |
+      set -euo pipefail
+      _DA=$devil-advocate.output
+      _QA=$verify-qa-completeness.output
+      DA_JSON="$_DA" QA_JSON="$_QA" python3 - << 'PYEOF'
+      import json, os, sys
+      devil = json.loads(os.environ['DA_JSON'])
+      qa = json.loads(os.environ['QA_JSON'])
+      if devil.get('devil_verdict') != 'panel_holds':
+          print('ERROR: Devil\'s Advocate verdict is not panel_holds; publication blocked.')
+          sys.exit(1)
+      if qa.get('verdict') not in {'pass', 'pass-with-notes'}:
+          print(f"ERROR: QA completeness verdict is {qa.get('verdict')!r}; publication blocked.")
+          sys.exit(1)
+      print('PUBLICATION_GATE=PASS')
+      PYEOF
+
+  - id: push-and-pr
+    depends_on: [publication-gate]
+    bash: |
+      set -euo pipefail
+      BRANCH=$(git rev-parse --abbrev-ref HEAD)
+      BASE=${BASE_BRANCH:-main}
+
+      if [ -z "$BRANCH" ] || [ "$BRANCH" = "HEAD" ] || [ "$BRANCH" = "$BASE" ] || [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
+        echo "ERROR: refusing to push protected or detached branch '$BRANCH'."
+        exit 1
+      fi
+      ALLOWED_PATTERN=${ARCHON_ALLOWED_BRANCH_PATTERN:-'^(feat|feature|fix|bugfix|chore|docs|refactor|test|perf)/.+$|^[A-Z][A-Z0-9]+-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$'}
+      if ! [[ "$BRANCH" =~ $ALLOWED_PATTERN ]]; then
+        echo "ERROR: refusing branch '$BRANCH'; it does not match the feature-branch allowlist."
+        echo "Allowed by default: feat/*, feature/*, fix/*, bugfix/*, chore/*, docs/*, refactor/*, test/*, perf/*, or ISSUE-123-description."
+        exit 1
+      fi
+
+      echo "Pushing branch $BRANCH to origin..."
+      git push -u origin HEAD 2>&1
+
+      # Open a PR if one does not already exist
+      EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || true)
+      if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
+        echo "PR already exists: #$EXISTING_PR"
+        PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url' 2>/dev/null || echo "(unknown)")
+      else
+        PRD_FILE=$(find .archon/ralph -name "prd.json" -type f 2>/dev/null | head -1)
+        if [ -n "$PRD_FILE" ]; then
+          TITLE=$(python3 -c "import json; d=json.load(open('$PRD_FILE')); print(d.get('description','')[:80])" 2>/dev/null || echo "$BRANCH")
+        else
+          TITLE="$BRANCH"
+        fi
+        PR_URL=$(gh pr create \
+          --base "$BASE" \
+          --head "$BRANCH" \
+          --title "$TITLE" \
+          --body "Implemented by Archon Ralph loop. Automated gates: tests, visual QA, architecture, scope, QA completeness, and publication policy all passed." \
+        )
+      fi
+
+      if [ -z "$PR_URL" ] || [[ "$PR_URL" != http* ]]; then
+        echo "ERROR: branch push succeeded but pull-request creation did not return a URL."
+        exit 1
+      fi
+
+      echo "PR_URL=$PR_URL"
+      echo "BRANCH=$BRANCH"
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4g: VERIFICATION PLAN (Item 7)
+  # Manhattan Phase 4.2: output the formal Verification Plan template
+  # before running QA so reviewers know exactly what claim is being
+  # verified, its claim type, and what architectural checks are required.
+  # ══════════════════════════════════════════════════════════════════
+  - id: verification-plan
+    depends_on: [scope-check]
+    bash: |
+      set -uo pipefail
+      PRD_FILE=$(find .archon/ralph -name "prd.json" | head -1)
+      BRANCH=$(git rev-parse --abbrev-ref HEAD)
+      STORIES=$(python3 -c "import json; d=json.load(open('$PRD_FILE')); print(', '.join(s['id'] for s in d.get('userStories',[])))" 2>/dev/null || echo "N/A")
+      AG=$(python3 -c "import json; d=json.load(open('$PRD_FILE')); ag=d.get('architectureGuardrails',{}); print(f\"Budget: {ag.get('interfaceBudget','N/A')} | Depth: {ag.get('depthGoal','N/A')} | Seam: {ag.get('seamContract','N/A')}\")" 2>/dev/null || echo "N/A")
+      HIGH_RISK=$(python3 -c "import json; d=json.load(open('$PRD_FILE')); print([s['id'] for s in d.get('userStories',[]) if s.get('archRiskTrigger',False)])" 2>/dev/null || echo "[]")
+
+      cat << EOF
+      ### [Verification Plan]
+      - **Claim to Verify:** Branch $BRANCH implements stories [$STORIES] satisfying every acceptance criterion in prd.json AND the real Jira ticket fields.
+      - **Claim Type:** Empirical Fact (requires real browser + live data to verify)
+      - **Method:** Three independent domain specialists (Frontend, Code Review, Architecture) each review the diff against their domain — double-blind (none saw the implementation session). qa-synthesize applies the Happy/Not-happy panel rules. verify-qa-completeness cross-checks criteria count against the real Jira ticket.
+      - **Architecture Checks:** $AG | High-risk stories (archRiskTrigger=true): $HIGH_RISK — these require the Architecture panelist to trace every interface change to its definition.
+      EOF
+      echo "VERIFICATION_PLAN=output_above"
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4h: QA PANEL — Frontend Specialist (Item 8)
+  # One of three parallel independent domain reviewers.
+  # Persona: Frontend Developer — prop flows, render paths, visible content.
+  # ══════════════════════════════════════════════════════════════════
+  - id: qa-review-frontend
+    depends_on: [verification-plan, fetch-jira-context]
+    context: fresh
+    provider: pi
+    model: anthropic/claude-sonnet-4-5
+    prompt: |
+      # QA Panel — Frontend Developer
+
+      You are an independent **Frontend Developer** reviewer. You did NOT write
+      this code. Your role is TWO-PART:
+
+      **Part 1 — Synthesize the deterministic Tier B probe result.** The
+      automated visual-qa already ran Playwright and checked for meaningful
+      content assertions. Your job is to READ what it found and determine
+      whether those assertions actually cover the frontend acceptance criteria
+      (a passing Playwright run that asserts `page.title()` is NOT the same as
+      verifying the UI shows correct data). Extend the automated verdict with
+      your domain judgment.
+
+      **Part 2 — Code reading (your exclusive domain).** Trace every UI
+      acceptance criterion through the diff to its RENDER PATH. A prop passed
+      to a component that doesn’t destructure it is a silent no-op. The
+      architecture-audit’s automated check found structural violations; your
+      job is to verify whether those violations affect visible UI output.
+
+      ## Deterministic Gate Results (already run — synthesize, don’t repeat)
+      Tier B visual-qa (Playwright): $visual-qa.output
+      Architecture audit (automated): $architecture-audit.output
+      Tests: $run-tests.output
+      Scope: $scope-check.output
+
+      ## Real Jira Ticket
+      $fetch-jira-context.output
+
+      ## Step 1: Read the diff
+      ```bash
+      find .archon/ralph -name "prd.json" | head -1 | xargs cat
+      git diff $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      ```
+
+      ## Step 2: Synthesize + extend
+      - **Tier B synthesis:** Did the Playwright probe assert a KNOWN DATA VALUE
+        for each frontend AC? Or did it only assert page load? State which ACs
+        the probe genuinely covered vs. which remain unproven.
+      - **Render path trace:** For each UI criterion, trace: data prop → JSX
+        render → visible DOM. Confirm the element is in the render tree, not
+        just passed as a prop that gets ignored.
+      - **Architecture-audit extension:** The automated audit flagged structural
+        issues. Do any of those translate to INVISIBLE UI content for a user?
+
+      ## Step 3: Output
+      Count every real Jira acceptance criterion you examined, including criteria
+      that are not frontend-applicable. A criterion passes only when its relevant
+      frontend behavior is proven or it is explicitly not frontend-applicable.
+      ```json
+      {
+        "domain": "frontend",
+        "verdict": "Happy|Happy-with-changes|Not-happy",
+        "top_fix": "single most important fix (empty if Happy)",
+        "top_fix_resolution": "resolved|deferred: <owner + rationale>|unresolved|none",
+        "criteria_checked": 10,
+        "criteria_passed": 10,
+        "tier_b_synthesis": "which ACs the Playwright probe covered vs uncovered",
+        "findings": ["up to 4 concrete checkable gaps"],
+        "summary": "2-sentence factual summary"
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        domain:
+          type: string
+        verdict:
+          type: string
+          enum: [Happy, Happy-with-changes, Not-happy]
+        top_fix:
+          type: string
+        top_fix_resolution:
+          type: string
+        criteria_checked:
+          type: number
+        criteria_passed:
+          type: number
+        findings:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+      required: [domain, verdict, top_fix, top_fix_resolution, criteria_checked, criteria_passed, findings, summary]
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4i: QA PANEL — Code Reviewer (Item 8)
+  # Domain: scope, security, constraints ("no new libraries", etc.).
+  # ══════════════════════════════════════════════════════════════════
+  - id: qa-review-code
+    depends_on: [verification-plan, fetch-jira-context]
+    context: fresh
+    provider: pi
+    model: anthropic/claude-sonnet-4-5
+    prompt: |
+      # QA Panel — Code Reviewer
+
+      You are an independent **Code Reviewer**. You did NOT write this code.
+      Your role is TWO-PART:
+
+      **Part 1 — Synthesize the deterministic test results.** `run-tests`
+      already ran `make test` and per-package test suites. Your job: read
+      what passed/failed and judge whether the passing tests actually COVER
+      the behavioral acceptance criteria (a test for a utility function is
+      not the same as a test for the user-visible behavior). Gaps in test
+      coverage are findings in your domain.
+
+      **Part 2 — Constraint compliance (your exclusive domain).** Check that
+      the diff respects ALL stated constraints: no new libraries, no backend
+      changes, theme tokens only, no dead code, no scope creep. These are
+      deterministic checks the other panels don’t cover.
+
+      ## Deterministic Gate Results (already run — synthesize, don’t repeat)
+      Tests: $run-tests.output
+      Scope: $scope-check.output
+
+      ## Real Jira Ticket
+      $fetch-jira-context.output
+
+      ## Step 1: Read the diff
+      ```bash
+      find .archon/ralph -name "prd.json" | head -1 | xargs cat
+      git diff $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      ```
+
+      ## Step 2: Synthesize + extend
+      - **Test coverage synthesis:** Did the test suite exercise each acceptance
+        criterion’s behavior, or just internal utilities? Which ACs have no
+        corresponding test coverage?
+      - **Constraint audit:** No new libraries (`import` check)? No backend files
+        touched? Only existing theme tokens (no inline hex/px)? No debug logs?
+      - **Dead code / scope creep:** Any changes outside allowedPaths? Any
+        commented-out blocks or console.log statements?
+
+      ## Step 3: Output
+      Count every real Jira acceptance criterion you examined. A criterion passes
+      only when the implementation and its available tests support the claim.
+      ```json
+      {
+        "domain": "code-review",
+        "verdict": "Happy|Happy-with-changes|Not-happy",
+        "top_fix": "single most important fix (empty if Happy)",
+        "top_fix_resolution": "resolved|deferred: <owner + rationale>|unresolved|none",
+        "criteria_checked": 10,
+        "criteria_passed": 10,
+        "test_coverage_synthesis": "which ACs have test coverage vs. which are untested",
+        "findings": ["up to 4 concrete checkable gaps"],
+        "summary": "2-sentence factual summary"
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        domain:
+          type: string
+        verdict:
+          type: string
+          enum: [Happy, Happy-with-changes, Not-happy]
+        top_fix:
+          type: string
+        top_fix_resolution:
+          type: string
+        criteria_checked:
+          type: number
+        criteria_passed:
+          type: number
+        findings:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+      required: [domain, verdict, top_fix, top_fix_resolution, criteria_checked, criteria_passed, findings, summary]
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4j: QA PANEL — Architecture Specialist (Item 8)
+  # Domain: interface width, seam clarity, depth, guardrails compliance.
+  # ══════════════════════════════════════════════════════════════════
+  - id: qa-review-arch
+    depends_on: [verification-plan, architecture-audit]
+    context: fresh
+    provider: pi
+    model: anthropic/claude-sonnet-4-5
+    prompt: |
+      # QA Panel — Architecture Specialist
+
+      You are an independent **Architecture Specialist** reviewer.
+      Your role is TWO-PART:
+
+      **Part 1 — Extend the automated architecture audit.** The
+      `architecture-audit` node ran a deterministic check for children-trap,
+      no-op props, interface width, and depth violations. Your job: read its
+      findings and determine (a) whether the automated check MISSED anything
+      (it only greps for literal patterns — it can miss indirect violations),
+      and (b) whether the violations it flagged are actually exploited in the
+      runtime behavior (a flagged unused export that’s tree-shaken is lower
+      severity than one that ships to production).
+
+      **Part 2 — Guardrails compliance (your exclusive domain).** Verify the
+      implementation stayed within the PRD’s `architectureGuardrails` brief
+      (Interface Budget, Depth Goal, Seam Contract). The automated audit
+      checks structure; you check INTENT.
+
+      ## Deterministic Arch Audit (already run — synthesize + extend)
+      $architecture-audit.output
+
+      ## Explorer Interface Catalog
+      $explore.output
+
+      ## Step 1: Read the diff
+      ```bash
+      find .archon/ralph -name "prd.json" | head -1 | xargs cat
+      git diff $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      ```
+
+      ## Step 2: Synthesize + extend
+      - **Audit extension:** Which automated findings are real runtime issues vs.
+        static false positives? What did the automated audit miss?
+      - **Guardrails check:** Does the implementation stay within the declared
+        Interface Budget (no new exports beyond allowedPaths)? Is the Depth Goal
+        met (complexity in hooks/helpers, not inline JSX)? Is the Seam Contract
+        named and respected?
+      - **High-risk stories:** For stories with `archRiskTrigger: true`, did the
+        implementation show extra caution at the named `interfaceSeam`?
+
+      ## Step 3: Output
+      Count every real Jira acceptance criterion you examined, including criteria
+      with no architecture impact. Passing means no unresolved architecture defect
+      prevents that criterion from being true.
+      ```json
+      {
+        "domain": "architecture",
+        "verdict": "Happy|Happy-with-changes|Not-happy",
+        "top_fix": "single most important fix (empty if Happy)",
+        "top_fix_resolution": "resolved|deferred: <owner + rationale>|unresolved|none",
+        "criteria_checked": 10,
+        "criteria_passed": 10,
+        "audit_extension": "what the automated audit missed or misclassified",
+        "findings": ["up to 4 concrete checkable gaps"],
+        "summary": "2-sentence factual summary"
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        domain:
+          type: string
+        verdict:
+          type: string
+          enum: [Happy, Happy-with-changes, Not-happy]
+        top_fix:
+          type: string
+        top_fix_resolution:
+          type: string
+        criteria_checked:
+          type: number
+        criteria_passed:
+          type: number
+        findings:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+      required: [domain, verdict, top_fix, top_fix_resolution, criteria_checked, criteria_passed, findings, summary]
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4k: QA SYNTHESIZE — Panel Rules (Item 8)
+  # Applies Manhattan panel pass conditions:
+  # - No unresolved Not-happy
+  # - Every panelist's top_fix resolved or deferred with rationale
+  # - criteria_checked cross-checked against Jira count
+  # If any Not-happy: verdict = fix-required (routes back to implementer)
+  # ══════════════════════════════════════════════════════════════════
+  - id: qa-synthesize
+    depends_on: [qa-review-frontend, qa-review-code, qa-review-arch, fetch-jira-context]
+    bash: |
+      set -uo pipefail
+      SCRIPT=$(mktemp "${TMPDIR:-/tmp}/qa-synth-XXXXXX.py")
+      cat > "$SCRIPT" << 'PYEOF'
+      import json, os, sys
+      fe  = json.loads(os.environ.get('QA_FRONTEND','{}') or '{}')
+      cr  = json.loads(os.environ.get('QA_CODE','{}') or '{}')
+      ar  = json.loads(os.environ.get('QA_ARCH','{}') or '{}')
+      panel = [fe, cr, ar]
+      not_happy = [p for p in panel if p.get('verdict') == 'Not-happy']
+      top_fixes = [{'domain': p.get('domain'), 'fix': p.get('top_fix','')} for p in panel if p.get('top_fix')]
+      unresolved_fixes = [
+          {'domain': p.get('domain'), 'fix': p.get('top_fix', '')}
+          for p in panel
+          if p.get('top_fix') and not str(p.get('top_fix_resolution', '')).startswith(('resolved', 'deferred:'))
+      ]
+      all_findings = [f for p in panel for f in p.get('findings',[])]
+      # Conservative panel result: every specialist must have checked and passed
+      # the criterion for the aggregate claim to count as covered.
+      criteria_checked = min(int(p.get('criteria_checked', 0) or 0) for p in panel)
+      criteria_passed = min(int(p.get('criteria_passed', 0) or 0) for p in panel)
+      blocked = bool(not_happy or unresolved_fixes or criteria_passed < criteria_checked)
+      verdict = 'fix-required' if blocked else ('pass' if not any(p.get('verdict')=='Happy-with-changes' for p in panel) else 'pass-with-notes')
+      out = {
+          'verdict': verdict,
+          'panel': [{'domain': p.get('domain'), 'verdict': p.get('verdict'), 'top_fix': p.get('top_fix',''), 'top_fix_resolution': p.get('top_fix_resolution',''), 'summary': p.get('summary','')} for p in panel],
+          'blocking_not_happy': [p.get('domain') for p in not_happy],
+          'top_fixes_required': top_fixes,
+          'unresolved_top_fixes': unresolved_fixes,
+          'all_findings': all_findings,
+          'criteria_checked': criteria_checked,
+          'criteria_passed': criteria_passed,
+          'summary': ' | '.join(p.get('summary','') for p in panel if p.get('summary'))
+      }
+      print(json.dumps(out))
+      sys.exit(1 if blocked else 0)
+      PYEOF
+      _FE=$qa-review-frontend.output
+      _CR=$qa-review-code.output
+      _AR=$qa-review-arch.output
+      QA_FRONTEND="$_FE" QA_CODE="$_CR" QA_ARCH="$_AR" python3 "$SCRIPT"
+      STATUS=$?
+      rm -f "$SCRIPT"
+      if [ "$STATUS" != "0" ]; then
+        echo "QA PANEL: Not-happy verdict(s) present — pipeline blocked until fixed."
+        echo "Route unresolved findings back to implement loop before proceeding."
+        exit 1
+      fi
+
+  # ══════════════════════════════════════════════════════════════════
+  # NODE 4l: DEVIL'S ADVOCATE (Item 9)
+  # Manhattan Phase 4.4: argue the strongest opposing hypothesis,
+  # run disconfirmation check, Analytical Mistakes Audit.
+  # ══════════════════════════════════════════════════════════════════
+  - id: devil-advocate
+    depends_on: [qa-synthesize, verify-qa-completeness]
+    context: fresh
+    model: small
+    prompt: |
+      # Devil's Advocate — Disconfirmation Analysis
+
+      You are the Devil's Advocate. The QA panel just returned a passing verdict.
+      Your job: argue the strongest case that the panel verdict is WRONG or INCOMPLETE.
+      Be a motivated skeptic.
+
+      ## QA Synthesize Output
+      $qa-synthesize.output
+
+      ## Architecture Audit
+      $architecture-audit.output
+
+      ## Step 1: Read the diff and prd.json
+      ```bash
+      find .archon/ralph -name "prd.json" | head -1 | xargs cat
+      git diff $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      ```
+
+      ## Step 2: Run the Analytical Mistakes Audit
+
+      For each item, check explicitly and output PASS or FAIL with evidence:
+
+      **Precision Theater:** Did the panel use false precision (exact counts from
+      limited sampling)? Are confidence claims calibrated to actual evidence?
+
+      **Correlation vs. Mechanism:** Did the panel confirm "a line was added near
+      the right place" rather than tracing the change to its actual effect?
+
+      **Authority/System Substitution:** Did the panel accept the architecture-audit's
+      automated verdict without independently checking the diff? Each finding must
+      have been re-verified, not rubber-stamped.
+
+      **False-Green/Substrate:** Did the Tier B probe assert a KNOWN DATA VALUE, or
+      did it just check the page loaded? A page load is not a false-green guard.
+
+      **Vertical-Slice:** Is every user-facing claim confirmed by tracing the full
+      path: data → API → React prop → JSX render → visible DOM? A prop that's passed
+      but never consumed is a silent no-op (the MetricTooltip bug pattern).
+
+      ## Step 3: Argue the opposing hypothesis
+
+      State the best case that the change is incomplete or wrong. Then state
+      what evidence would exist if you were wrong, and whether you found it.
+
+      ## Output
+      ```json
+      {
+        "opposing_hypothesis": "strongest case that the panel verdict is wrong",
+        "disconfirmation": "if I were wrong, X would exist; I checked and found Y",
+        "analytical_audit": {
+          "precision_theater": "Pass|Fail — evidence",
+          "correlation_vs_mechanism": "Pass|Fail — evidence",
+          "authority_substitution": "Pass|Fail — evidence",
+          "false_green_substrate": "Pass|Fail — evidence",
+          "vertical_slice": "Pass|Fail — evidence"
+        },
+        "residual_risk": "remaining concern not caught by panel",
+        "devil_verdict": "panel_holds|panel_questionable"
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        opposing_hypothesis:
+          type: string
+        disconfirmation:
+          type: string
+        analytical_audit:
+          type: object
+          properties:
+            precision_theater:
+              type: string
+            correlation_vs_mechanism:
+              type: string
+            authority_substitution:
+              type: string
+            false_green_substrate:
+              type: string
+            vertical_slice:
+              type: string
+          required: [precision_theater, correlation_vs_mechanism, authority_substitution, false_green_substrate, vertical_slice]
+        residual_risk:
+          type: string
+        devil_verdict:
+          type: string
+          enum: [panel_holds, panel_questionable]
+      required: [opposing_hypothesis, disconfirmation, analytical_audit, residual_risk, devil_verdict]
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 4n: STUCK DIAGNOSIS (Gap 5 — 80% Problem / Escalation Path)
+  # Fires ONLY when devil-advocate returns panel_questionable. The paper
+  # says: "the last 20% demands deep contextual knowledge that models often
+  # lack — these errors are harder to detect because the code *looks* right."
+  # This node produces a structured escalation brief for the human: exactly
+  # what is unresolved, why the AI couldn’t fix it, and the minimum
+  # intervention needed. It blocks push until the human acknowledges.
+  # ═══════════════════════════════════════════════════════════════
+  - id: stuck-diagnosis
+    depends_on: [devil-advocate]
+    when: "$devil-advocate.output.devil_verdict == 'panel_questionable'"
+    context: fresh
+    model: small
+    prompt: |
+      # Stuck Diagnosis — 80% Problem Escalation
+
+      The devil's advocate flagged this run as `panel_questionable`.
+      The AI has done what it can. The last 20% needs human judgment.
+
+      Your job: produce a clear, actionable escalation brief.
+      No code changes. No QA. Just diagnosis.
+
+      ## Devil's Advocate Findings
+      $devil-advocate.output
+
+      ## QA Panel Findings
+      $qa-synthesize.output
+
+      ## Step 1: Read the current state
+      ```bash
+      find .archon/ralph -name "prd.json" | head -1 | xargs cat
+      git diff $(git merge-base HEAD $BASE_BRANCH)..HEAD -- $(python3 -c "
+      import json; d=json.load(open('$(find .archon/ralph -name prd.json | head -1)'));
+      print(' '.join(d.get('allowedPaths',[])))
+      ")
+      ```
+
+      ## Step 2: Classify the stuck story
+
+      For the unresolved finding(s) from the QA panel, classify:
+      - **Root cause type:** architecture decision / missing domain knowledge /
+        test data gap / environment issue / ambiguous requirement
+      - **Why the AI couldn't resolve it:** which of the 80% problem categories
+        (wrong business logic assumption / missing edge case / integration seam /
+        subtle correctness requirement)
+      - **Minimum human intervention:** the SMALLEST action a developer must take
+        (e.g., "Add one sentence to AGENTS.md clarifying X" or
+        "Manually verify that the scenario.js callRecords siteId matches live world.sites.id")
+
+      ## Output
+      ```json
+      {
+        "stuck_story": "story ID and title",
+        "root_cause_type": "architecture|domain|test-data|environment|ambiguous-requirement",
+        "why_ai_stuck": "specific reason this needs human judgment",
+        "minimum_intervention": "exact action for the developer, one sentence",
+        "estimated_minutes": 15,
+        "lessons_entry": "one-line entry for ralph-lessons.md to prevent this recurrence"
+      }
+      ```
+    output_format:
+      type: object
+      properties:
+        stuck_story:
+          type: string
+        root_cause_type:
+          type: string
+        why_ai_stuck:
+          type: string
+        minimum_intervention:
+          type: string
+        estimated_minutes:
+          type: number
+        lessons_entry:
+          type: string
+      required: [stuck_story, root_cause_type, why_ai_stuck, minimum_intervention, lessons_entry]
+  # ═══════════════════════════════════════════════════════════════
+  # NOTE: The old single qa-review node has been replaced by the
+  # 3-member parallel QA panel defined above:
+  #   qa-review-frontend + qa-review-code + qa-review-arch
+  #   → qa-synthesize → devil-advocate → verify-qa-completeness
+  # ═══════════════════════════════════════════════════════════════
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 4m: VERIFY QA COMPLETENESS (deterministic cross-check)
+  # reported `criteria_checked` count against the real ticket's Gherkin
+  # scenario count (fetch-jira-context). If qa-review checked fewer
+  # criteria than the real ticket has, the verdict is force-downgraded
+  # to "incomplete" before update-jira ever sees it. This is the hard
+  # safety net; it cannot be talked out of firing by a confident summary.
+  # ═══════════════════════════════════════════════════════════════
+  - id: verify-qa-completeness
+    depends_on: [qa-synthesize, fetch-jira-context]
+    bash: |
+      set -uo pipefail
+      _QA=$qa-synthesize.output
+      _JIRA_CTX=$fetch-jira-context.output
+      _SCEN_COUNT=$(printf '%s' "$_JIRA_CTX" | grep -oE 'SCENARIO_COUNT=[0-9]+' | head -1 | cut -d= -f2)
+      _SCEN_COUNT=${_SCEN_COUNT:-0}
+      SCRIPT_FILE=$(mktemp "${TMPDIR:-/tmp}/verify-qa-XXXXXX.py")
+      cat > "$SCRIPT_FILE" << 'PYEOF'
+      import json
+      import os
+
+      qa = json.loads(os.environ["QA_JSON"])
+      real_count = int(os.environ.get("REAL_SCENARIO_COUNT", "0") or "0")
+      checked = int(qa.get("criteria_checked", 0) or 0)
+      passed = int(qa.get("criteria_passed", 0) or 0)
+      issues = list(qa.get("issues", []) or qa.get("all_findings", []))
+      verdict = qa.get("verdict", "unknown")
+
+      if real_count > 0 and checked < real_count:
+          verdict = "incomplete"
+          issues.append(
+              "Deterministic override: QA checked "
+              f"{checked} of the ticket's {real_count} acceptance-criteria scenarios."
+          )
+
+      required = real_count if real_count > 0 else checked
+      if passed < required or passed < checked:
+          verdict = "fail"
+          issues.append(
+              f"Deterministic override: only {passed} of {required} required "
+              f"criteria passed ({checked} checked)."
+          )
+
+      print(json.dumps({
+          "verdict": verdict,
+          "criteria_checked": checked,
+          "criteria_passed": passed,
+          "real_scenario_count": real_count,
+          "issues": issues,
+          "summary": qa.get("summary", ""),
+      }))
+      PYEOF
+      QA_JSON="$_QA" REAL_SCENARIO_COUNT="$_SCEN_COUNT" python3 "$SCRIPT_FILE"
+      rm -f "$SCRIPT_FILE"
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 4d: UPDATE JIRA TICKET
+  # Posts a comment on the originating Jira issue summarizing what was
+  # implemented and the independent QA verdict. Best-effort: if no Jira
+  # issue key is found in the input, or JIRA_* env vars aren't configured
+  # for this codebase, this step is skipped rather than failing the run.
+  # Consumes verify-qa-completeness's output (NOT qa-review's raw output
+  # directly) so a deterministically-detected under-scoped review can
+  # never reach the real ticket as a bare "PASS."
+  # ═══════════════════════════════════════════════════════════════
+  - id: update-jira
+    depends_on: [push-and-pr, verify-qa-completeness]
+    bash: |
+      set -uo pipefail
+      _USER_MSG="$USER_MESSAGE"
+      ISSUE_KEY=$(printf '%s' "$_USER_MSG" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -1)
+      if [ -z "$ISSUE_KEY" ]; then
+        echo "No Jira issue key found in input — skipping Jira update."
+        exit 0
+      fi
+      if [ -z "${JIRA_BASE_URL:-}" ] || [ -z "${JIRA_EMAIL:-}" ] || [ -z "${JIRA_API_TOKEN:-}" ]; then
+        echo "JIRA_BASE_URL/JIRA_EMAIL/JIRA_API_TOKEN not configured for this codebase — skipping Jira update."
+        exit 0
+      fi
+
+      BRANCH=$(git rev-parse --abbrev-ref HEAD)
+      _PUSH=$push-and-pr.output
+      PR_URL=$(printf '%s' "$_PUSH" | grep '^PR_URL=' | cut -d= -f2- | tr -d '\n')
+      _QA_JSON=$verify-qa-completeness.output
+
+      SCRIPT_FILE=$(mktemp "${TMPDIR:-/tmp}/jira-comment-XXXXXX.py")
+      cat > "$SCRIPT_FILE" << 'PYEOF'
+      import base64
+      import json
+      import os
+      import urllib.request
+
+      issue_key = os.environ["ISSUE_KEY"]
+      base_url = os.environ["JIRA_BASE_URL"].rstrip("/")
+      email = os.environ["JIRA_EMAIL"]
+      token = os.environ["JIRA_API_TOKEN"]
+      branch = os.environ["BRANCH"]
+      pr_url = os.environ["PR_URL"]
+
+      try:
+          qa = json.loads(os.environ["QA_JSON"])
+      except Exception:
+          qa = {
+              "verdict": "unknown",
+              "criteria_checked": 0,
+              "criteria_passed": 0,
+              "issues": [],
+              "summary": "(no QA output captured)",
+          }
+
+      lines = [
+          f"Archon Ralph loop implemented this ticket on branch `{branch}`.",
+          f"Pull request: {pr_url}",
+          f"Independent QA verdict: {qa.get('verdict', 'unknown').upper()} "
+          f"({qa.get('criteria_passed', 0)}/{qa.get('criteria_checked', 0)} criteria verified).",
+          qa.get("summary", ""),
+      ]
+      if qa.get("issues"):
+          lines.append("Issues found: " + "; ".join(qa["issues"]))
+
+      body = {
+          "body": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                  {"type": "paragraph", "content": [{"type": "text", "text": line}]}
+                  for line in lines
+                  if line
+              ],
+          }
+      }
+
+      auth = base64.b64encode(f"{email}:{token}".encode()).decode()
+      request = urllib.request.Request(
+          f"{base_url}/rest/api/3/issue/{issue_key}/comment",
+          data=json.dumps(body).encode(),
+          headers={
+              "Authorization": f"Basic {auth}",
+              "Content-Type": "application/json",
+              "Accept": "application/json",
+          },
+          method="POST",
+      )
+      try:
+          with urllib.request.urlopen(request, timeout=15) as response:
+              print(f"Posted comment to {issue_key}: HTTP {response.status}")
+      except Exception as error:
+          print(f"Jira comment failed (non-fatal): {error}")
+      PYEOF
+      ISSUE_KEY="$ISSUE_KEY" BRANCH="$BRANCH" QA_JSON="$_QA_JSON" PR_URL="${PR_URL:-}" python3 "$SCRIPT_FILE"
+      rm -f "$SCRIPT_FILE"
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 5: COMPLETION REPORT (Item 10 — Manhattan Phase 5 delivery)
+  # Inverted Pyramid delivery: Key Answer First, Confidence level,
+  # Fact Calibration table, 5-Question Quality Checklist, and
+  # Architecture Acceptance Checklist.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: report
+    depends_on: [update-jira]
+    prompt: |
+      # Completion Report — Manhattan Phase 5 Delivery
+
+      Generate the completion report following the Manhattan Orchestrator
+      Inverted Pyramid format: Key Answer First, then supporting evidence.
+
+      ## All Gate Outputs
+
+      **Loop output:** $implement.output
+      **Environment gate:** $check-environment.output
+      **Explorer catalog:** $explore.output
+      **Tests:** $run-tests.output
+      **Tier B visual-qa:** $visual-qa.output
+      **Architecture audit:** $architecture-audit.output
+      **Scope check:** $scope-check.output
+      **QA Panel — Frontend:** $qa-review-frontend.output
+      **QA Panel — Code Review:** $qa-review-code.output
+      **QA Panel — Architecture:** $qa-review-arch.output
+      **QA Synthesize:** $qa-synthesize.output
+      **Devil's Advocate:** $devil-advocate.output
+      **QA Completeness (final deterministic verdict):** $verify-qa-completeness.output
+
+      ## Step 1: Read Final State
+      ```bash
+      PRD_FILE=$(find .archon/ralph -name "prd.json" | head -1)
+      cat "$PRD_FILE"
+      cat "${PRD_FILE%prd.json}progress.txt" 2>/dev/null || echo "(no progress.txt)"
+      git log --oneline --no-merges $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      git diff --stat $(git merge-base HEAD $BASE_BRANCH)..HEAD
+      ```
+
+      ## Step 2: Generate Report
+
+      Output this exact format:
+
+      ```
+      ═══════════════════════════════════════════════════════
+      RALPH DAG — COMPLETION REPORT
+      ═══════════════════════════════════════════════════════
+
+      KEY ANSWER: {one sentence — did the feature ship cleanly?
+                   State final verdict from verify-qa-completeness.}
+
+      Confidence: {High|Medium|Low}
+      Primary Caveat: {the single most important assumption or risk}
+
+      ── Gates ────────────────────────────────────────────
+      Environment (Tier A): {PASS|FAIL}
+      Tests (make test):    {pass/fail — N passed, N failed}
+      Tier B visual-qa:     {PASS|FAIL — probe asserted known value: Y/N}
+      Architecture audit:   {pass|fail — top violation if any}
+      Scope check:          {pass|fail}
+      QA Panel:             {panel_holds|panel_questionable}
+        - Frontend:         {Happy|Happy-with-changes|Not-happy}
+        - Code Review:      {Happy|Happy-with-changes|Not-happy}
+        - Architecture:     {Happy|Happy-with-changes|Not-happy}
+      Devil's Advocate:     {panel_holds|panel_questionable}
+      Final QA Verdict:     {from verify-qa-completeness — pass|fail|incomplete}
+        Criteria: {N}/{M} (real ticket: {real_scenario_count})
+
+      ── Fact Calibration ─────────────────────────────────
+      | Claim | Type | If Wrong |
+      |-------|------|----------|
+      | All stories implemented | Verified Fact (git log) | (impossible to be wrong — deterministic) |
+      | Code compiles | Verified Fact (Tier A build) | — |
+      | UI shows correct content | Empirical Fact (Tier B probe) | Silent empty state possible |
+      | No interface violations | Verified Fact (arch-audit) | No-op props shipped |
+      | AC criteria met | Reported Fact (QA panel LLM) | Panel missed a domain |
+      | Panel verdict holds | Hypothesis (devil-advocate judgment) | Opposing hypothesis: {state it} |
+
+      ── Stories ──────────────────────────────────────────
+      | ID | Title | Risk | Status |
+      |----|-------|------|--------|
+      {for each story from prd.json: id, title, riskScore/9, passes}
+
+      ── Jira Child Tickets ────────────────────────────────
+      {for each entry in prd.json.jiraChildIssues: storyId → jiraKey (url)}
+
+      ── Commits ──────────────────────────────────────────
+      {git log output}
+
+      ── Files Changed ────────────────────────────────────
+      {git diff --stat output}
+
+      ── 5-Question Quality Checklist ─────────────────────
+      1. Did we answer the actual question within constraints?
+         → {Yes/No — state the feature name and whether all ACs were met}
+      2. Independent check for each load-bearing claim?
+         → {Yes — list: Tier A build, Tier B Playwright, arch-audit, 3-panel}
+      3. Assumptions and reported facts labeled with if-wrong consequences?
+         → {Yes — see Fact Calibration above}
+      4. Actively tried to disconfirm?
+         → {Yes — devil-advocate verdict: {panel_holds|panel_questionable};
+            opposing hypothesis: {state from devil-advocate output}}
+      5. Every empirical claim cleared Tier A + Tier B gates?
+         → {Yes|Partial|No — state which claims remain as Hypotheses}
+
+      ── Architecture Acceptance Checklist ────────────────
+      1. Public interface as small as possible?
+         → {Yes|No — from architecture-audit interface_width_violations}
+      2. Core complexity in deep module, not call sites?
+         → {Yes|No — from architecture-audit depth_violations}
+      3. Seams explicit enough for test isolation?
+         → {Yes|No — from architecture-audit seam_issues}
+      4. Any module boundary become ambiguous?
+         → {Yes|No — state if corrected}
+
+      ── Trajectory Audit ─────────────────────────────────
+      {from implement.output <trajectory> block:
+       - read_component_sources: were components read before use?
+       - build_checks_run: did a build run after each story?
+       - explicit_git_add: were files named explicitly?}
+
+      ── Run Metrics (Cost Estimate) ──────────────────────
+      ```bash
+      ITER=$(grep -c '"passes": true' "$(find .archon/ralph -name prd.json | head -1)" 2>/dev/null || echo "?")
+      echo "Estimated iterations: $ITER"
+      echo "Estimated token cost: ~\$$(python3 -c \"print(round($ITER * 0.045, 2))\" 2>/dev/null || echo '?') (@ ~45k tokens/iteration, claude-sonnet-4-5 pricing)"
+      ```
+
+      ── Patterns Discovered ──────────────────────────────
+      {from progress.txt Codebase Patterns section, or "None"}
+
+      ═══════════════════════════════════════════════════════
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # NODE 5b: APPEND LESSONS (Gap 2+3+6 — Quality Flywheel)
+  # The paper's "continuous quality flywheel": every run's failures and
+  # patterns are written to ~/.archon/ralph-lessons.md. The explore node
+  # reads this file at the start of the NEXT run as dynamic context —
+  # turning single-run failures into permanent institutional memory.
+  # Best-effort: never blocks the pipeline.
+  # ═══════════════════════════════════════════════════════════════
+  - id: append-lessons
+    depends_on: [report]
+    bash: |
+      set -uo pipefail
+      LESSONS="${ARCHON_HOME:-$HOME/.archon}/ralph-lessons.md"
+      BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+      DATE=$(date -u +"%Y-%m-%d")
+
+      # Collect failures from all gate outputs
+      _ARCH=$architecture-audit.output
+      _DA=$devil-advocate.output
+      _SYNTH=$qa-synthesize.output
+      _STUCK=${stuck-diagnosis.output:-}
+
+      SCRIPT=$(mktemp "${TMPDIR:-/tmp}/lessons-XXXXXX.py")
+      cat > "$SCRIPT" << 'PYEOF'
+      import json, os, sys
+      lessons_file = os.environ['LESSONS_FILE']
+      branch = os.environ.get('BRANCH', 'unknown')
+      date = os.environ.get('DATE', '')
+
+      arch = json.loads(os.environ.get('ARCH_OUT', '{}') or '{}')
+      da = json.loads(os.environ.get('DA_OUT', '{}') or '{}')
+      synth = json.loads(os.environ.get('SYNTH_OUT', '{}') or '{}')
+      stuck = json.loads(os.environ.get('STUCK_OUT', '{}') or '{}')
+
+      # Collect significant findings
+      entries = []
+      for v in arch.get('children_trap_violations', []):
+          entries.append(f'[children-trap] {v}')
+      for v in arch.get('noop_prop_violations', []):
+          entries.append(f'[noop-prop] {v}')
+      for v in arch.get('depth_violations', []):
+          entries.append(f'[depth] {v}')
+      for f in synth.get('all_findings', []):
+          entries.append(f'[qa-panel] {f}')
+      if da.get('devil_verdict') == 'panel_questionable':
+          entries.append(f'[escalated] {da.get("residual_risk", "")}')
+      if stuck.get('lessons_entry'):
+          entries.append(f'[stuck-pattern] {stuck["lessons_entry"]}')
+
+      if not entries:
+          print('No failures to record.')
+          sys.exit(0)
+
+      os.makedirs(os.path.dirname(lessons_file), exist_ok=True)
+      with open(lessons_file, 'a') as f:
+          f.write(f'\n## {date} | {branch}\n')
+          for e in entries:
+              f.write(f'- {e}\n')
+      print(f'Appended {len(entries)} lesson(s) to {lessons_file}')
+      PYEOF
+
+      LESSONS_FILE="$LESSONS" BRANCH="$BRANCH" DATE="$DATE" \
+        ARCH_OUT="$_ARCH" DA_OUT="$_DA" SYNTH_OUT="$_SYNTH" STUCK_OUT="$_STUCK" \
+        python3 "$SCRIPT" || echo "WARN: append-lessons failed (non-blocking)"
+      rm -f "$SCRIPT"
