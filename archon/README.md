@@ -1,6 +1,6 @@
-# Archon Ralph Integration
+# Manhattan Orchestrator V2 for Archon
 
-This directory packages the Manhattan-aligned Ralph workflow for [Archon](https://archon.diy/). It is independent of the repository's existing VS Code Copilot skill installer and does not alter `install.sh`, `skills/`, or `agents/`.
+This directory packages the Manhattan Orchestrator V2 workflow for [Archon](https://archon.diy/). It is independent of the repository's existing VS Code Copilot skill installer and does not alter `install.sh`, `skills/`, or `agents/`.
 
 ## Contents
 
@@ -8,12 +8,13 @@ This directory packages the Manhattan-aligned Ralph workflow for [Archon](https:
 archon/
 ├── install.sh                         # Non-destructive project installer
 ├── workflows/
-│   └── archon-ralph-dag.yaml          # Jira-first implementation and QA DAG
+│   └── manhattan-orchestrator-v2.yaml # Jira-first implementation and QA DAG
 ├── commands/
 │   └── archon-ralph-generate.md       # Fallback idea/PRD decomposition command
 └── docs/
     ├── ARCHON_SETUP.md                # Install and configure the Archon runtime
-    └── onboarding.html                # Visual, print-friendly workflow guide
+   └── manhattan-orchestrator-v2-onboarding.html
+                              # Visual, print-friendly workflow guide
 ```
 
 ## Quick Start
@@ -29,13 +30,13 @@ archon/
 
    ```bash
    cd /absolute/path/to/product-repository
-   archon validate workflows archon-ralph-dag --json
+   archon validate workflows manhattan-orchestrator-v2 --json
    ```
 
 4. Run with a Jira parent ticket:
 
    ```bash
-   archon workflow run archon-ralph-dag \
+   archon workflow run manhattan-orchestrator-v2 \
      --branch feat/SAP-3560-voice-health \
      "SAP-3560"
    ```
@@ -53,10 +54,10 @@ archon/
 
 ## Updating the Package
 
-Update `workflows/archon-ralph-dag.yaml` and `commands/archon-ralph-generate.md` from a validated Archon source checkout. Before committing:
+Update `workflows/manhattan-orchestrator-v2.yaml` and `commands/archon-ralph-generate.md` from a validated Archon source checkout. Before committing:
 
 ```bash
-archon validate workflows archon-ralph-dag --json
+archon validate workflows manhattan-orchestrator-v2 --json
 bash -n archon/install.sh
 ```
 
