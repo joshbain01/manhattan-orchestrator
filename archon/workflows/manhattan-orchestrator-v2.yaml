@@ -1,9 +1,9 @@
-name: archon-ralph-dag
+name: manhattan-orchestrator-v2
 provider: pi
 model: medium
 description: |
-  Use when: User wants to run a Ralph implementation loop.
-  Triggers: "ralph", "run ralph", "ralph dag", "run ralph dag".
+  Use when: User wants to run the Manhattan Orchestrator V2 implementation workflow.
+  Triggers: "manhattan orchestrator", "manhattan v2", "run manhattan orchestrator".
 
   DAG workflow that:
   1. Detects input: existing prd.json, existing prd.md (needs stories), or raw idea
@@ -1346,7 +1346,7 @@ nodes:
           --base "$BASE" \
           --head "$BRANCH" \
           --title "$TITLE" \
-          --body "Implemented by Archon Ralph loop. Automated gates: tests, visual QA, architecture, scope, QA completeness, and publication policy all passed." \
+          --body "Implemented by Manhattan Orchestrator V2. Automated gates: tests, visual QA, architecture, scope, QA completeness, and publication policy all passed." \
         )
       fi
 
@@ -2012,7 +2012,7 @@ nodes:
           }
 
       lines = [
-          f"Archon Ralph loop implemented this ticket on branch `{branch}`.",
+          f"Manhattan Orchestrator V2 implemented this ticket on branch `{branch}`.",
           f"Pull request: {pr_url}",
           f"Independent QA verdict: {qa.get('verdict', 'unknown').upper()} "
           f"({qa.get('criteria_passed', 0)}/{qa.get('criteria_checked', 0)} criteria verified).",
@@ -2099,7 +2099,7 @@ nodes:
 
       ```
       ═══════════════════════════════════════════════════════
-      RALPH DAG — COMPLETION REPORT
+      MANHATTAN ORCHESTRATOR V2 — COMPLETION REPORT
       ═══════════════════════════════════════════════════════
 
       KEY ANSWER: {one sentence — did the feature ship cleanly?

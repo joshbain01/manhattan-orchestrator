@@ -1,4 +1,4 @@
-# Set Up Archon for the Manhattan Ralph Workflow
+# Set Up Archon for Manhattan Orchestrator V2
 
 This guide installs and configures the **Archon runtime**. It is intentionally separate from the repository's existing Manhattan Orchestrator installation instructions.
 
@@ -111,7 +111,7 @@ bash archon/install.sh /absolute/path/to/product-repository
 The installer adds only:
 
 ```text
-<product>/.archon/workflows/archon-ralph-dag.yaml
+<product>/.archon/workflows/manhattan-orchestrator-v2.yaml
 <product>/.archon/commands/archon-ralph-generate.md
 ```
 
@@ -127,7 +127,7 @@ The previous file is retained with a `.bak` suffix.
 
 ```bash
 cd /absolute/path/to/product-repository
-archon validate workflows archon-ralph-dag --json
+archon validate workflows manhattan-orchestrator-v2 --json
 ```
 
 Expected result:
@@ -151,7 +151,7 @@ The Jira issue is the specification. Pass only the parent issue key unless addit
 
 ```bash
 cd /absolute/path/to/product-repository
-archon workflow run archon-ralph-dag \
+archon workflow run manhattan-orchestrator-v2 \
   --branch feat/SAP-3560-voice-health \
   "SAP-3560"
 ```
@@ -181,7 +181,7 @@ A paused or failed run must be inspected before resuming. Do not bypass a failin
 
 ## Important Current Limits
 
-The onboarding guide at [`onboarding.html`](onboarding.html) documents current hardening gaps. In particular:
+The onboarding guide at [`manhattan-orchestrator-v2-onboarding.html`](manhattan-orchestrator-v2-onboarding.html) documents current hardening gaps. In particular:
 
 - The environment gate proves toolchain and baseline build health, but project-specific service/database truth still requires project-declared probes.
 - The browser gate requires content-oriented Playwright assertions, but projects should add known sentinel data plus console/network failure instrumentation.
@@ -189,7 +189,7 @@ The onboarding guide at [`onboarding.html`](onboarding.html) documents current h
 
 ## Troubleshooting
 
-### `Unknown workflow 'archon-ralph-dag'`
+### `Unknown workflow 'manhattan-orchestrator-v2'`
 
 Run the installer from this repository, then validate from the product repository root.
 

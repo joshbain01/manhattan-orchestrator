@@ -14,7 +14,7 @@ if [[ "${2:-}" == "--force" ]] || [[ "${1:-}" == "--force" ]]; then
 fi
 
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
-WORKFLOW_DEST="$TARGET_DIR/.archon/workflows/archon-ralph-dag.yaml"
+WORKFLOW_DEST="$TARGET_DIR/.archon/workflows/manhattan-orchestrator-v2.yaml"
 COMMAND_DEST="$TARGET_DIR/.archon/commands/archon-ralph-generate.md"
 
 if ! git -C "$TARGET_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -69,7 +69,7 @@ validate_install_paths() {
 
 # Check every destination before writing either file, so a conflict cannot leave
 # a mixed workflow/command version behind.
-preflight_file "$REPO_DIR/workflows/archon-ralph-dag.yaml" "$WORKFLOW_DEST"
+preflight_file "$REPO_DIR/workflows/manhattan-orchestrator-v2.yaml" "$WORKFLOW_DEST"
 preflight_file "$REPO_DIR/commands/archon-ralph-generate.md" "$COMMAND_DEST"
 
 STAGE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/manhattan-archon-install-XXXXXX")
@@ -77,9 +77,9 @@ ROLLBACK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/manhattan-archon-rollback-XXXXXX")
 cleanup() { rm -rf "$STAGE_DIR" "$ROLLBACK_DIR"; }
 trap cleanup EXIT
 
-cp "$REPO_DIR/workflows/archon-ralph-dag.yaml" "$STAGE_DIR/workflow.yaml"
+cp "$REPO_DIR/workflows/manhattan-orchestrator-v2.yaml" "$STAGE_DIR/workflow.yaml"
 cp "$REPO_DIR/commands/archon-ralph-generate.md" "$STAGE_DIR/command.md"
-cmp -s "$REPO_DIR/workflows/archon-ralph-dag.yaml" "$STAGE_DIR/workflow.yaml"
+cmp -s "$REPO_DIR/workflows/manhattan-orchestrator-v2.yaml" "$STAGE_DIR/workflow.yaml"
 cmp -s "$REPO_DIR/commands/archon-ralph-generate.md" "$STAGE_DIR/command.md"
 
 workflow_existed=false
@@ -112,5 +112,5 @@ fi
 printf '[installed] %s\n' "$WORKFLOW_DEST"
 printf '[installed] %s\n' "$COMMAND_DEST"
 
-printf '\nArchon Ralph resources installed into %s\n' "$TARGET_DIR"
-printf 'Next: cd %q && archon validate workflows archon-ralph-dag --json\n' "$TARGET_DIR"
+printf '\nManhattan Orchestrator V2 resources installed into %s\n' "$TARGET_DIR"
+printf 'Next: cd %q && archon validate workflows manhattan-orchestrator-v2 --json\n' "$TARGET_DIR"
